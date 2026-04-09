@@ -1,0 +1,39 @@
+# Clang-Tidy checks: https://clang.llvm.org/extra/clang-tidy/checks/list.html
+
+Checks:           'bugprone-*,
+                   clang-analyzer-*,
+                   cppcoreguideline-*,
+                   google-*,
+                   misc-*,
+                   modernize-*,
+                   -modernize-avoid-c-arrays,
+                   -modernize-concat-nested-namespaces,
+                   -modernize-replace-disallow-copy-and-assign-macro,
+                   -modernize-use-trailing-return-type,
+                   performance-*,
+                   readability-*,
+                   -readability-magic-numbers'
+
+WarningsAsErrors: 'bugprone-*,
+                   clang-analyzer-*,
+                   cppcoreguideline-*,
+                   google-*,
+                   misc-*,
+                   modernize-*,
+                   -modernize-avoid-c-arrays,
+                   -modernize-concat-nested-namespaces,
+                   -modernize-replace-disallow-copy-and-assign-macro,
+                   -modernize-use-trailing-return-type,
+                   performance-*,
+                   -performance-inefficient-string-concatenation,
+                   -performance-unnecessary-value-param'
+
+CheckOptions:
+  - key:          modernize-use-auto.MinTypeNameLength
+    value:        '15'
+  - key:          performance-move-const-arg.CheckTriviallyCopyableMove
+    value:        '0'
+  - key:          readability-function-cognitive-complexity.DescribeBasicIncrements
+    value:        'false'
+  - key:          readability-function-cognitive-complexity.Threshold
+    value:        '100'
