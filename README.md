@@ -35,4 +35,4 @@ APK output: "app_vlp/build/outputs/apk/debug/"
 
 ## ▶️ Run
 
-![vlp run gif](/home/yeliu/Downloads/ezgif-6d49af0c8a5bb15a.gif)
+![vlp run gif](assets/ezgif-6d49af0c8a5bb15a.gif)
