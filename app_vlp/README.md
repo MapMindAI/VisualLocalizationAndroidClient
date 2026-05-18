@@ -1,38 +1,35 @@
 # app_vlp
 
-Android AR app module with optional `mobili::vlp` integration and a built-in WebSocket stream server.
+Android AR app module with optional `mobili::vlp` integration and a built-in gRPC stream server.
 
-## WebSocket stream
+## gRPC stream
 
-- Server endpoint: `ws://<phone-ip>:8765`
-- Message type: JSON (`type = "frame"`)
-- Payload fields:
-  - `timestamp_ns`
-  - `width`, `height`
-  - `intrinsics`: `fx`, `fy`, `cx`, `cy`
-  - `pose`: `qx`, `qy`, `qz`, `qw`, `tx`, `ty`, `tz`
-  - `gray_b64`: base64-encoded gray image bytes (Y channel)
+- Server endpoint: `<phone-ip>:50051` (plaintext gRPC)
+- RPC: `vlp.FrameStreamService/StreamFrames` (server streaming)
+- Payload format: binary frame
+  - Header (little-endian, 64 bytes): magic, timestamp, width, height, intrinsics, pose
+  - Body: raw gray image bytes (Y channel), length `width * height`
 
 ## Python test client
 
 Script:
 
-- `scripts/ws_stream_client.py`
+- `python/ws_stream_client.py`
 
 Install dependency:
 
 ```bash
-pip install websocket-client
+pip install grpcio opencv-python numpy
 ```
 
 Run via ADB port forward:
 
 ```bash
-adb forward tcp:8765 tcp:8765
-python3 python/ws_stream_client.py --host 127.0.0.1 --port 8765 --max-frames 20
+adb forward tcp:50051 tcp:50051
+python3 python/ws_stream_client.py --host 127.0.0.1 --port 50051
 ```
 
-The client saves received frames as `.pgm` files under `stream_frames/` by default.
+The client displays the stream live in OpenCV with overlaid intrinsics and pose.
 
 ## Optional mobili::vlp library
 

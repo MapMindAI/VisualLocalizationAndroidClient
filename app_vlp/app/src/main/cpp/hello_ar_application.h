@@ -88,6 +88,7 @@ class HelloArApplication {
   bool IsDepthSupported();
 
   void OnSettingsChange(bool is_instant_placement_enabled);
+  void setRenderEnabled(bool enabled) { render_enabled_ = enabled; }
 
   int PublishImage();
   bool popDebugMessage();
@@ -160,6 +161,7 @@ class HelloArApplication {
   float latest_ty_ = 0.0f;
   float latest_tz_ = 0.0f;
   bool has_latest_stream_frame_ = false;
+  bool render_enabled_ = true;
 };
 }  // namespace hello_ar
 

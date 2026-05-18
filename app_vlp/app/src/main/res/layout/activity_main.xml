@@ -46,13 +46,14 @@
       android:layout_height="wrap_content"
       android:layout_alignParentEnd="true"
       android:layout_alignParentBottom="true"
-      android:layout_margin="50dp"
-      android:padding="12dp"
+      android:layout_margin="12dp"
+      android:padding="8dp"
       android:orientation="horizontal">
       <Button
           android:id="@+id/send_button"
-          android:layout_width="wrap_content"
+          android:layout_width="0dp"
           android:layout_height="wrap_content"
+          android:layout_weight="1"
           android:text="Send Image"
           android:textAllCaps="false" />
       <View
@@ -60,8 +61,9 @@
           android:layout_height="0dp" />
       <Button
           android:id="@+id/startrec"
-          android:layout_width="wrap_content"
+          android:layout_width="0dp"
           android:layout_height="wrap_content"
+          android:layout_weight="1"
           android:text="Start Rec"
           android:textAllCaps="false" />
       <View
@@ -69,9 +71,20 @@
           android:layout_height="0dp" />
       <Button
           android:id="@+id/stoprec"
-          android:layout_width="wrap_content"
+          android:layout_width="0dp"
           android:layout_height="wrap_content"
+          android:layout_weight="1"
           android:text="Stop Rec"
+          android:textAllCaps="false" />
+      <View
+          android:layout_width="5dp"
+          android:layout_height="0dp" />
+      <Button
+          android:id="@+id/render_toggle_button"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="Disable Render"
           android:textAllCaps="false" />
   </LinearLayout>
 

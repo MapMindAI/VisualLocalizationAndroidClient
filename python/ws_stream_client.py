@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 import argparse
-import base64
-import json
+import struct
 import sys
 import time
 from typing import Any, Dict
 
 import cv2
+import grpc
 import numpy as np
-import websocket
+
+
+FRAME_MAGIC = 0x564C5031  # "VLP1"
+FRAME_HEADER_STRUCT = struct.Struct("<IQII11f")
+FRAME_HEADER_SIZE = FRAME_HEADER_STRUCT.size
 
 
 def draw_overlay(
@@ -77,80 +81,86 @@ def draw_overlay(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Connect to HelloAR frame WebSocket and display stream with overlays."
+        description="Connect to HelloAR gRPC stream and display overlays."
     )
     parser.add_argument("--host", default="127.0.0.1", help="Phone IP address")
-    parser.add_argument("--port", type=int, default=8765, help="WebSocket port")
+    parser.add_argument("--port", type=int, default=50051, help="gRPC port")
     args = parser.parse_args()
 
-    url = f"ws://{args.host}:{args.port}"
-    print(f"Connecting to {url}")
+    target = f"{args.host}:{args.port}"
+    print(f"Connecting to {target}")
 
     state: Dict[str, Any] = {"count": 0, "started_at": time.time(), "last_log_count": 0}
     window_name = "VLP Gray Stream"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 640, 480)
 
-    def on_open(ws: websocket.WebSocketApp) -> None:
+    channel = grpc.insecure_channel(target)
+    stream_frames = channel.unary_stream(
+        "/vlp.FrameStreamService/StreamFrames",
+        request_serializer=lambda x: x,
+        response_deserializer=lambda x: x,
+    )
+
+    try:
         print("Connected.")
+        for payload in stream_frames(b"subscribe"):
+            if len(payload) < FRAME_HEADER_SIZE:
+                continue
+            (
+                magic,
+                timestamp_ns,
+                width,
+                height,
+                fx,
+                fy,
+                cx,
+                cy,
+                qx,
+                qy,
+                qz,
+                qw,
+                tx,
+                ty,
+                tz,
+            ) = FRAME_HEADER_STRUCT.unpack_from(payload, 0)
+            if magic != FRAME_MAGIC:
+                continue
 
-    def on_error(ws: websocket.WebSocketApp, error: Any) -> None:
-        print(f"WebSocket error: {error}", file=sys.stderr)
+            expected = width * height
+            gray = payload[FRAME_HEADER_SIZE : FRAME_HEADER_SIZE + expected]
+            if len(gray) != expected:
+                continue
 
-    def on_close(
-        ws: websocket.WebSocketApp, close_status_code: Any, close_msg: Any
-    ) -> None:
+            intrinsics = {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
+            pose = {"qx": qx, "qy": qy, "qz": qz, "qw": qw, "tx": tx, "ty": ty, "tz": tz}
+
+            state["count"] += 1
+            frame_idx = state["count"]
+            elapsed = time.time() - state["started_at"]
+            fps = (frame_idx / elapsed) if elapsed > 0 else 0.0
+
+            overlay = draw_overlay(gray, width, height, timestamp_ns, intrinsics, pose, fps)
+            cv2.imshow(window_name, overlay)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                break
+
+            if frame_idx - state["last_log_count"] >= 30:
+                state["last_log_count"] = frame_idx
+                print(
+                    f"[{frame_idx}] stream_fps={fps:.2f} ts={timestamp_ns} "
+                    f"size={width}x{height}"
+                )
         elapsed = time.time() - state["started_at"]
         print(
             f"Closed. frames={state['count']} elapsed={elapsed:.2f}s "
             f"fps={(state['count'] / elapsed) if elapsed > 0 else 0:.2f}"
         )
-
-    def on_message(ws: websocket.WebSocketApp, message: str) -> None:
-        payload = json.loads(message)
-        if payload.get("type") != "frame":
-            return
-
-        width = int(payload["width"])
-        height = int(payload["height"])
-        timestamp_ns = int(payload["timestamp_ns"])
-        intrinsics = payload["intrinsics"]
-        pose = payload["pose"]
-        gray = base64.b64decode(payload["gray_b64"])
-
-        expected = width * height
-        if len(gray) != expected:
-            print(
-                f"Warning: gray length mismatch, expected={expected}, got={len(gray)}",
-                file=sys.stderr,
-            )
-            return
-
-        state["count"] += 1
-        frame_idx = state["count"]
-        elapsed = time.time() - state["started_at"]
-        fps = (frame_idx / elapsed) if elapsed > 0 else 0.0
-
-        overlay = draw_overlay(gray, width, height, timestamp_ns, intrinsics, pose, fps)
-        cv2.imshow(window_name, overlay)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            ws.close()
-            return
-
-        if frame_idx - state["last_log_count"] >= 30:
-            state["last_log_count"] = frame_idx
-            print(
-                f"[{frame_idx}] stream_fps={fps:.2f} ts={timestamp_ns} "
-                f"size={width}x{height}"
-            )
-
-    ws = websocket.WebSocketApp(
-        url, on_open=on_open, on_message=on_message, on_error=on_error, on_close=on_close
-    )
-    try:
-        ws.run_forever()
+    except grpc.RpcError as e:
+        print(f"gRPC error: {e}", file=sys.stderr)
     finally:
+        channel.close()
         cv2.destroyAllWindows()
     return 0
 

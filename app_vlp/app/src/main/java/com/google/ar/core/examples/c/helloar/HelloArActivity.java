@@ -53,7 +53,7 @@ public class HelloArActivity extends AppCompatActivity
   private static final int SNACKBAR_UPDATE_INTERVAL_MILLIS = 1000; // In milliseconds.
   private static final int DEBUGMSG_UPDATE_INTERVAL_MILLIS = 200; // In milliseconds.
   private static final int STREAM_UPDATE_INTERVAL_MILLIS = 33; // ~30 FPS target.
-  private static final int STREAM_SERVER_PORT = 8765;
+  private static final int STREAM_SERVER_PORT = 50051;
   private static final int NUM_DEPTH_SETTINGS_CHECKBOXES = 2;
   private static final int NUM_INSTANT_PLACEMENT_SETTINGS_CHECKBOXES = 1;
 
@@ -74,9 +74,10 @@ public class HelloArActivity extends AppCompatActivity
   // Opaque native pointer to the native application instance.
   private long nativeApplication;
   private GestureDetector gestureDetector;
+  private boolean renderEnabled = true;
 
   private Snackbar snackbar;
-  private StreamWebSocketServer streamWebSocketServer;
+  private GrpcFrameStreamServer grpcFrameStreamServer;
   // private Handler planeStatusCheckingHandler;
   // private final Runnable planeStatusCheckingRunnable =
   //     new Runnable() {
@@ -106,7 +107,7 @@ public class HelloArActivity extends AppCompatActivity
         public void run() {
           // The runnable is executed on main UI thread.
           try {
-            if (JniInterface.popDebugMessage(nativeApplication)) {
+            if (renderEnabled && JniInterface.popDebugMessage(nativeApplication)) {
               if (snackbar != null) {
                 snackbar.dismiss();
               }
@@ -125,8 +126,23 @@ public class HelloArActivity extends AppCompatActivity
         @Override
         public void run() {
           try {
-            if (streamWebSocketServer != null) {
-              streamWebSocketServer.publishLatestFrame(nativeApplication);
+            if (!renderEnabled) {
+              surfaceView.requestRender();
+            }
+            if (grpcFrameStreamServer != null) {
+              grpcFrameStreamServer.publishLatestFrame(nativeApplication);
+            }
+            if (!renderEnabled && JniInterface.hasLatestStreamFrame(nativeApplication)) {
+              float[] pose = JniInterface.getLatestStreamPose(nativeApplication);
+              long[] tsData =
+                  JniInterface.getLatestStreamDimensionsAndTimestamp(nativeApplication);
+              if (pose != null && pose.length >= 7 && tsData != null && tsData.length >= 1) {
+                msgView.setText(
+                    String.format(
+                        Locale.US,
+                        "Render OFF\nq=(%.4f, %.4f, %.4f, %.4f)\nt=(%.4f, %.4f, %.4f)\nts=%d",
+                        pose[0], pose[1], pose[2], pose[3], pose[4], pose[5], pose[6], tsData[0]));
+              }
             }
           } catch (Exception e) {
             Log.e(TAG, "streamStatusCheckingRunnable failed", e);
@@ -179,9 +195,9 @@ public class HelloArActivity extends AppCompatActivity
 
     JniInterface.assetManager = getAssets();
     nativeApplication = JniInterface.createNativeApplication(getAssets());
-    streamWebSocketServer = new StreamWebSocketServer(STREAM_SERVER_PORT);
-    streamWebSocketServer.start();
-    Log.i(TAG, "WebSocket stream server started at ws://0.0.0.0:" + STREAM_SERVER_PORT);
+    grpcFrameStreamServer = new GrpcFrameStreamServer(STREAM_SERVER_PORT);
+    grpcFrameStreamServer.start();
+    Log.i(TAG, "gRPC stream server started at 0.0.0.0:" + STREAM_SERVER_PORT);
 
     // planeStatusCheckingHandler = new Handler();
     debugStatusCheckingHandler = new Handler();
@@ -241,6 +257,23 @@ public class HelloArActivity extends AppCompatActivity
         displayInSnackbar("Stop Recoding");
       }
     });
+    final Button renderToggleButton = findViewById(R.id.render_toggle_button);
+    renderToggleButton.setText("Disable Render");
+    renderToggleButton.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        renderEnabled = !renderEnabled;
+        JniInterface.setRenderEnabled(nativeApplication, renderEnabled);
+        renderToggleButton.setText(renderEnabled ? "Disable Render" : "Enable Render");
+        if (renderEnabled) {
+          surfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+          displayInSnackbar("Render enabled");
+        } else {
+          surfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+          displayInSnackbar("Render disabled, printing pose");
+        }
+      }
+    });
 
     ImageButton settingsButton = findViewById(R.id.settings_button);
     settingsButton.setOnClickListener(
@@ -282,6 +315,11 @@ public class HelloArActivity extends AppCompatActivity
     try {
       JniInterface.onSettingsChange(
         nativeApplication, instantPlacementSettings.isInstantPlacementEnabled());
+      JniInterface.setRenderEnabled(nativeApplication, renderEnabled);
+      surfaceView.setRenderMode(
+          renderEnabled
+              ? GLSurfaceView.RENDERMODE_CONTINUOUSLY
+              : GLSurfaceView.RENDERMODE_WHEN_DIRTY);
       JniInterface.onResume(nativeApplication, getApplicationContext(), this);
       surfaceView.onResume();
     } catch (Exception e) {
@@ -320,14 +358,14 @@ public class HelloArActivity extends AppCompatActivity
   public void onDestroy() {
     super.onDestroy();
 
-    if (streamWebSocketServer != null) {
+    if (grpcFrameStreamServer != null) {
       try {
-        streamWebSocketServer.stop(1000);
+        grpcFrameStreamServer.stop(1000);
       } catch (InterruptedException e) {
-        Log.e(TAG, "Failed to stop WebSocket server cleanly", e);
+        Log.e(TAG, "Failed to stop gRPC server cleanly", e);
         Thread.currentThread().interrupt();
       }
-      streamWebSocketServer = null;
+      grpcFrameStreamServer = null;
     }
 
     // Synchronized to avoid racing onDrawFrame.

@@ -289,14 +289,15 @@ void HelloArApplication::getLatestStreamMetadata(
 
 void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
                                      bool useDepthForOcclusion) {
-  // Render the scene.
-  glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
-  glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
-
-  glEnable(GL_CULL_FACE);
-  glEnable(GL_DEPTH_TEST);
-
   if (ar_session_ == nullptr) return;
+
+  if (render_enabled_) {
+    // Render the scene.
+    glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+  }
 
   ArSession_setCameraTextureName(ar_session_,
                                  background_renderer_.GetTextureId());
@@ -306,13 +307,17 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
     LOGE("HelloArApplication::OnDrawFrame ArSession_update error");
   }
 
-  andy_renderer_.SetDepthTexture(depth_texture_.GetTextureId(),
-                                 depth_texture_.GetWidth(),
-                                 depth_texture_.GetHeight());
+  if (render_enabled_) {
+    andy_renderer_.SetDepthTexture(depth_texture_.GetTextureId(),
+                                   depth_texture_.GetWidth(),
+                                   depth_texture_.GetHeight());
+  }
 #if HELLO_AR_ENABLE_MOBILI_VLP
-  world_mesh_renderer_.SetDepthTexture(depth_texture_.GetTextureId(),
-                                       depth_texture_.GetWidth(),
-                                       depth_texture_.GetHeight());
+  if (render_enabled_) {
+    world_mesh_renderer_.SetDepthTexture(depth_texture_.GetTextureId(),
+                                         depth_texture_.GetWidth(),
+                                         depth_texture_.GetHeight());
+  }
 #endif // #if HELLO_AR_ENABLE_MOBILI_VLP
 
   ArCamera* ar_camera;
@@ -320,7 +325,7 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
 
   int32_t geometry_changed = 0;
   ArFrame_getDisplayGeometryChanged(ar_session_, ar_frame_, &geometry_changed);
-  if (geometry_changed != 0 || !calculate_uv_transform_) {
+  if (render_enabled_ && (geometry_changed != 0 || !calculate_uv_transform_)) {
     // The UV Transform represents the transformation between screenspace in
     // normalized units and screenspace in units of pixels.  Having the size of
     // each pixel is necessary in the virtual object shader, to perform
@@ -430,6 +435,14 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
                                  quad.w, trans[0], trans[1], trans[2],
                                  mobili::vlp::OPENGL);
 #endif  // #if HELLO_AR_ENABLE_MOBILI_VLP
+
+  if (!render_enabled_) {
+    // Keep output stable when rendering is disabled to avoid white flicker.
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    ArCamera_release(ar_camera);
+    return;
+  }
 
   background_renderer_.Draw(ar_session_, ar_frame_,
                             depthColorVisualizationEnabled);

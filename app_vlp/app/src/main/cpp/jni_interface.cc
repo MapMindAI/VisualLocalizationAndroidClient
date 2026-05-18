@@ -73,6 +73,11 @@ JNI_METHOD(void, onSettingsChange)
   native(native_application)->OnSettingsChange(is_instant_placement_enabled);
 }
 
+JNI_METHOD(void, setRenderEnabled)
+(JNIEnv *, jclass, jlong native_application, jboolean enabled) {
+  native(native_application)->setRenderEnabled(enabled == JNI_TRUE);
+}
+
 JNI_METHOD(void, destroyNativeApplication)
 (JNIEnv *, jclass, jlong native_application) {
   delete native(native_application);
