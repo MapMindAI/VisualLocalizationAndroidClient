@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # Set locale.
 RUN apt-get update -y && apt-get install -y locales && rm -rf /var/lib/apt/lists/* \
@@ -8,11 +8,11 @@ ENV LANG en_US.utf8
 # Install tools for installers.
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    g++=4:9.3.0* \
-    software-properties-common=0.99.9* \
+    g++ \
+    software-properties-common \
     zip \
-    unzip=6.0* \
-    wget=1.20.3* \
+    unzip \
+    wget \
     default-jre=2:1.11* \
     openjdk-17-jdk openjdk-17-jre \
     && rm -rf /var/lib/apt/lists/*

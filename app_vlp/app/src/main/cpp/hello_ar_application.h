@@ -37,6 +37,11 @@
 #include "texture.h"
 #include "util.h"
 
+#ifndef HELLO_AR_ENABLE_MOBILI_VLP
+#define HELLO_AR_ENABLE_MOBILI_VLP 0
+#endif
+
+
 namespace hello_ar {
 
 // HelloArApplication handles all application logics.
@@ -116,7 +121,9 @@ class HelloArApplication {
   ObjRenderer andy_renderer_;
 
   float world_mesh_color_[4];
+#if HELLO_AR_ENABLE_MOBILI_VLP
   ObjWareRenderer world_mesh_renderer_;
+#endif  // #if HELLO_AR_ENABLE_MOBILI_VLP
   Texture depth_texture_;
 
   int32_t plane_count_ = 0;

@@ -19,7 +19,14 @@
 #include <jni.h>
 
 #include "hello_ar_application.h"
+
+#ifndef HELLO_AR_ENABLE_MOBILI_VLP
+#define HELLO_AR_ENABLE_MOBILI_VLP 0
+#endif
+
+#if HELLO_AR_ENABLE_MOBILI_VLP
 #include "mobili_vlp_api.h"
+#endif
 
 #define JNI_METHOD(return_type, method_name) \
   JNIEXPORT return_type JNICALL              \
@@ -43,7 +50,9 @@ inline hello_ar::HelloArApplication *native(jlong ptr) {
 
 jint JNI_OnLoad(JavaVM *vm, void *) {
   g_vm = vm;
+#if HELLO_AR_ENABLE_MOBILI_VLP
   dm::xr::RunLoggingThread();
+#endif
   return JNI_VERSION_1_6;
 }
 
@@ -106,11 +115,22 @@ JNI_METHOD(int, onStartRec)
   std::string cppString(cstr);
   env->ReleaseStringUTFChars(record_folder, cstr);
 
+#if HELLO_AR_ENABLE_MOBILI_VLP
   return mobili::vlp::StartRecording(cppString);
+#else
+  (void)cppString;
+  return -1;
+#endif
 }
 
 JNI_METHOD(void, onStopRec)
-(JNIEnv* env, jclass) { mobili::vlp::StopRecording(); }
+(JNIEnv* env, jclass) {
+#if HELLO_AR_ENABLE_MOBILI_VLP
+  mobili::vlp::StopRecording();
+#else
+  (void)env;
+#endif
+}
 
 JNI_METHOD(void, onDisplayGeometryChanged)
 (JNIEnv *, jobject, jlong native_application, int display_rotation, int width,
