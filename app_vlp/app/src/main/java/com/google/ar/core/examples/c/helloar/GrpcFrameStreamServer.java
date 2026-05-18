@@ -1,5 +1,8 @@
 package com.google.ar.core.examples.c.helloar;
 
+import android.graphics.ImageFormat;
+import android.graphics.Rect;
+import android.graphics.YuvImage;
 import android.util.Log;
 import io.grpc.MethodDescriptor;
 import io.grpc.Server;
@@ -20,8 +23,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 class GrpcFrameStreamServer {
   private static final String TAG = "GrpcFrameStreamServer";
   private static final String SERVICE_NAME = "vlp.FrameStreamService";
-  private static final int FRAME_HEADER_MAGIC = 0x564c5031; // "VLP1"
+  private static final int FRAME_HEADER_MAGIC = 0x564c5032; // "VLP2"
   private static final int FRAME_HEADER_SIZE = 64;
+  private static final int JPEG_QUALITY = 80;
 
   private static final MethodDescriptor.Marshaller<byte[]> BYTE_ARRAY_MARSHALLER =
       new MethodDescriptor.Marshaller<byte[]>() {
@@ -110,6 +114,19 @@ class GrpcFrameStreamServer {
     Log.i(TAG, "Client subscribed, subscribers=" + subscribers.size());
   }
 
+  boolean hasSubscribers() {
+    Iterator<ServerCallStreamObserver<byte[]>> iter = subscribers.iterator();
+    while (iter.hasNext()) {
+      ServerCallStreamObserver<byte[]> observer = iter.next();
+      if (observer.isCancelled()) {
+        subscribers.remove(observer);
+        continue;
+      }
+      return true;
+    }
+    return false;
+  }
+
   void publishLatestFrame(long nativeApplication) {
     if (server == null || subscribers.isEmpty()) {
       return;
@@ -118,13 +135,13 @@ class GrpcFrameStreamServer {
       return;
     }
 
-    byte[] gray = JniInterface.getLatestGrayImage(nativeApplication);
+    byte[] yuvNv21 = JniInterface.getLatestYuvNv21Image(nativeApplication);
     long[] dimensionsAndTimestamp =
         JniInterface.getLatestStreamDimensionsAndTimestamp(nativeApplication);
     float[] intrinsics = JniInterface.getLatestStreamIntrinsics(nativeApplication);
     float[] pose = JniInterface.getLatestStreamPose(nativeApplication);
 
-    if (gray == null
+    if (yuvNv21 == null
         || dimensionsAndTimestamp == null
         || dimensionsAndTimestamp.length < 3
         || intrinsics == null
@@ -141,13 +158,36 @@ class GrpcFrameStreamServer {
       // No new frame since last publish.
       return;
     }
-    int expected = width * height;
-    if (width <= 0 || height <= 0 || gray.length < expected) {
+    int expectedYuv = width * height * 3 / 2;
+    if (width <= 0 || height <= 0 || yuvNv21.length < expectedYuv) {
+      return;
+    }
+
+    boolean hasReadySubscriber = false;
+    for (ServerCallStreamObserver<byte[]> observer : subscribers) {
+      if (!observer.isCancelled() && observer.isReady()) {
+        hasReadySubscriber = true;
+        break;
+      }
+    }
+    if (!hasReadySubscriber) {
+      return;
+    }
+
+    ByteArrayOutputStream jpegStream = new ByteArrayOutputStream();
+    YuvImage yuvImage = new YuvImage(yuvNv21, ImageFormat.NV21, width, height, null);
+    boolean compressed =
+        yuvImage.compressToJpeg(new Rect(0, 0, width, height), JPEG_QUALITY, jpegStream);
+    if (!compressed) {
+      return;
+    }
+    byte[] jpegBytes = jpegStream.toByteArray();
+    if (jpegBytes.length == 0) {
       return;
     }
 
     ByteBuffer buffer =
-        ByteBuffer.allocate(FRAME_HEADER_SIZE + expected).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer.allocate(FRAME_HEADER_SIZE + jpegBytes.length).order(ByteOrder.LITTLE_ENDIAN);
     buffer.putInt(FRAME_HEADER_MAGIC);
     buffer.putLong(timestampNs); // timestamp_ns
     buffer.putInt(width);
@@ -163,7 +203,7 @@ class GrpcFrameStreamServer {
     buffer.putFloat(pose[4]); // tx
     buffer.putFloat(pose[5]); // ty
     buffer.putFloat(pose[6]); // tz
-    buffer.put(gray, 0, expected);
+    buffer.put(jpegBytes);
     byte[] payload = buffer.array();
 
     Iterator<ServerCallStreamObserver<byte[]>> iter = subscribers.iterator();

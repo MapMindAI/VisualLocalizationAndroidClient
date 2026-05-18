@@ -52,6 +52,7 @@ public class JniInterface {
   public static native void onStopRec();
   public static native boolean hasLatestStreamFrame(long nativeApplication);
   public static native byte[] getLatestGrayImage(long nativeApplication);
+  public static native byte[] getLatestYuvNv21Image(long nativeApplication);
   public static native long[] getLatestStreamDimensionsAndTimestamp(long nativeApplication);
   public static native float[] getLatestStreamIntrinsics(long nativeApplication);
   public static native float[] getLatestStreamPose(long nativeApplication);
@@ -78,6 +79,7 @@ public class JniInterface {
   public static native void onSettingsChange(
       long nativeApplication, boolean isInstantPlacementEnabled);
   public static native void setRenderEnabled(long nativeApplication, boolean enabled);
+  public static native void setStreamConsumerActive(long nativeApplication, boolean active);
 
   public static Bitmap loadImage(String imageName) {
 

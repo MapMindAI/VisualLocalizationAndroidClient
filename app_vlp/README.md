@@ -8,7 +8,8 @@ Android AR app module with optional `mobili::vlp` integration and a built-in gRP
 - RPC: `vlp.FrameStreamService/StreamFrames` (server streaming)
 - Payload format: binary frame
   - Header (little-endian, 64 bytes): magic, timestamp, width, height, intrinsics, pose
-  - Body: raw gray image bytes (Y channel), length `width * height`
+  - Body: JPEG bytes for full RGB image
+- JPEG conversion is done only in the gRPC send path (when a subscriber is ready), not in every camera-frame update.
 
 ## Python test client
 

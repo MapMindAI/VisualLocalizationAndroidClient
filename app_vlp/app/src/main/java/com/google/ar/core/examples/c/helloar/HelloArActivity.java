@@ -129,6 +129,9 @@ public class HelloArActivity extends AppCompatActivity
             if (!renderEnabled) {
               surfaceView.requestRender();
             }
+            boolean hasGrpcClient =
+                grpcFrameStreamServer != null && grpcFrameStreamServer.hasSubscribers();
+            JniInterface.setStreamConsumerActive(nativeApplication, hasGrpcClient);
             if (grpcFrameStreamServer != null) {
               grpcFrameStreamServer.publishLatestFrame(nativeApplication);
             }

@@ -266,6 +266,11 @@ std::vector<uint8_t> HelloArApplication::getLatestGrayImage() const {
   return latest_gray_image_;
 }
 
+std::vector<uint8_t> HelloArApplication::getLatestYuvNv21Image() const {
+  std::lock_guard<std::mutex> lock(stream_mutex_);
+  return latest_yuv_nv21_image_;
+}
+
 void HelloArApplication::getLatestStreamMetadata(
     int64_t* timestamp_ns, int* width, int* height, float* fx, float* fy,
     float* cx, float* cy, float* qx, float* qy, float* qz, float* qw,
@@ -364,70 +369,123 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
   ArCameraIntrinsics_getFocalLength(ar_session_, camera_intrinsics_, &fx, &fy);
   ArCameraIntrinsics_getPrincipalPoint(ar_session_, camera_intrinsics_, &cx, &cy);
 
-  ArImage* image = nullptr;
-  ArStatus image_status = ArFrame_acquireCameraImage(ar_session_, ar_frame_, &image);
-  if (image_status == AR_SUCCESS) {
-    int width = 0;
-    int height = 0;
-    int64_t image_timestamp_ns = 0;
-    ArImage_getTimestamp(ar_session_, image, &image_timestamp_ns);
-    ArImage_getWidth(ar_session_, image, &width);
-    ArImage_getHeight(ar_session_, image, &height);
+  {
+    std::lock_guard<std::mutex> lock(stream_mutex_);
+    latest_timestamp_ns_ = frame_timestamp_ns;
+    latest_fx_ = fx;
+    latest_fy_ = fy;
+    latest_cx_ = cx;
+    latest_cy_ = cy;
+    latest_qx_ = quad.x;
+    latest_qy_ = quad.y;
+    latest_qz_ = quad.z;
+    latest_qw_ = quad.w;
+    latest_tx_ = trans[0];
+    latest_ty_ = trans[1];
+    latest_tz_ = trans[2];
+    has_latest_stream_frame_ = true;
+  }
 
-    const uint8_t* y = nullptr;
-    int y_length = 0;
-    ArImage_getPlaneData(ar_session_, image, 0, &y, &y_length);
+  bool need_stream_image = stream_consumer_active_;
+  bool need_record_image = false;
+#if HELLO_AR_ENABLE_MOBILI_VLP
+  need_record_image = mobili::vlp::Recording();
+#endif
 
-    int32_t row_stride = width;
-    int32_t pixel_stride = 1;
-    ArImage_getPlaneRowStride(ar_session_, image, 0, &row_stride);
-    ArImage_getPlanePixelStride(ar_session_, image, 0, &pixel_stride);
-    row_stride = std::max(1, row_stride);
-    pixel_stride = std::max(1, pixel_stride);
+  if (need_stream_image || need_record_image) {
+    ArImage* image = nullptr;
+    ArStatus image_status = ArFrame_acquireCameraImage(ar_session_, ar_frame_, &image);
+    if (image_status == AR_SUCCESS) {
+      int width = 0;
+      int height = 0;
+      int64_t image_timestamp_ns = 0;
+      ArImage_getTimestamp(ar_session_, image, &image_timestamp_ns);
+      ArImage_getWidth(ar_session_, image, &width);
+      ArImage_getHeight(ar_session_, image, &height);
 
-    std::vector<uint8_t> gray_buffer(static_cast<size_t>(width) *
-                                     static_cast<size_t>(height));
-    if (pixel_stride == 1 && row_stride == width) {
-      const size_t bytes_to_copy =
-          std::min(gray_buffer.size(), static_cast<size_t>(std::max(0, y_length)));
-      std::memcpy(gray_buffer.data(), y, bytes_to_copy);
-    } else {
-      for (int r = 0; r < height; ++r) {
-        const uint8_t* src_row = y + static_cast<size_t>(r) * row_stride;
-        uint8_t* dst_row = gray_buffer.data() + static_cast<size_t>(r) * width;
-        for (int c = 0; c < width; ++c) {
-          dst_row[c] = src_row[static_cast<size_t>(c) * pixel_stride];
+      const uint8_t* y = nullptr;
+      const uint8_t* u = nullptr;
+      const uint8_t* v = nullptr;
+      int y_length = 0;
+      int u_length = 0;
+      int v_length = 0;
+      ArImage_getPlaneData(ar_session_, image, 0, &y, &y_length);
+      ArImage_getPlaneData(ar_session_, image, 1, &u, &u_length);
+      ArImage_getPlaneData(ar_session_, image, 2, &v, &v_length);
+      if (y != nullptr && u != nullptr && v != nullptr && y_length > 0 &&
+          u_length > 0 && v_length > 0) {
+        if (need_stream_image) {
+          int32_t y_row_stride = width;
+          int32_t y_pixel_stride = 1;
+          int32_t u_row_stride = width / 2;
+          int32_t u_pixel_stride = 2;
+          int32_t v_row_stride = width / 2;
+          int32_t v_pixel_stride = 2;
+          ArImage_getPlaneRowStride(ar_session_, image, 0, &y_row_stride);
+          ArImage_getPlanePixelStride(ar_session_, image, 0, &y_pixel_stride);
+          ArImage_getPlaneRowStride(ar_session_, image, 1, &u_row_stride);
+          ArImage_getPlanePixelStride(ar_session_, image, 1, &u_pixel_stride);
+          ArImage_getPlaneRowStride(ar_session_, image, 2, &v_row_stride);
+          ArImage_getPlanePixelStride(ar_session_, image, 2, &v_pixel_stride);
+          y_row_stride = std::max(1, y_row_stride);
+          y_pixel_stride = std::max(1, y_pixel_stride);
+          u_row_stride = std::max(1, u_row_stride);
+          u_pixel_stride = std::max(1, u_pixel_stride);
+          v_row_stride = std::max(1, v_row_stride);
+          v_pixel_stride = std::max(1, v_pixel_stride);
+
+          std::vector<uint8_t> gray_buffer(static_cast<size_t>(width) *
+                                           static_cast<size_t>(height));
+          if (y_pixel_stride == 1 && y_row_stride == width) {
+            const size_t bytes_to_copy =
+                std::min(gray_buffer.size(), static_cast<size_t>(std::max(0, y_length)));
+            std::memcpy(gray_buffer.data(), y, bytes_to_copy);
+          } else {
+            for (int r = 0; r < height; ++r) {
+              const uint8_t* src_row = y + static_cast<size_t>(r) * y_row_stride;
+              uint8_t* dst_row = gray_buffer.data() + static_cast<size_t>(r) * width;
+              for (int c = 0; c < width; ++c) {
+                dst_row[c] = src_row[static_cast<size_t>(c) * y_pixel_stride];
+              }
+            }
+          }
+
+          std::vector<uint8_t> yuv_nv21_buffer(
+              static_cast<size_t>(width) * static_cast<size_t>(height) * 3 / 2);
+          std::memcpy(yuv_nv21_buffer.data(), gray_buffer.data(), gray_buffer.size());
+          const int chroma_width = width / 2;
+          const int chroma_height = height / 2;
+          size_t uv_base = static_cast<size_t>(width) * static_cast<size_t>(height);
+          for (int r = 0; r < chroma_height; ++r) {
+            const uint8_t* u_row = u + static_cast<size_t>(r) * u_row_stride;
+            const uint8_t* v_row = v + static_cast<size_t>(r) * v_row_stride;
+            uint8_t* dst_row =
+                yuv_nv21_buffer.data() + uv_base + static_cast<size_t>(r) * width;
+            for (int c = 0; c < chroma_width; ++c) {
+              dst_row[2 * c] = v_row[static_cast<size_t>(c) * v_pixel_stride];
+              dst_row[2 * c + 1] = u_row[static_cast<size_t>(c) * u_pixel_stride];
+            }
+          }
+
+          {
+            std::lock_guard<std::mutex> lock(stream_mutex_);
+            latest_gray_image_ = std::move(gray_buffer);
+            latest_yuv_nv21_image_ = std::move(yuv_nv21_buffer);
+            latest_gray_width_ = width;
+            latest_gray_height_ = height;
+            latest_timestamp_ns_ = image_timestamp_ns;
+          }
         }
-      }
-    }
-
-    {
-      std::lock_guard<std::mutex> lock(stream_mutex_);
-      latest_gray_image_ = std::move(gray_buffer);
-      latest_gray_width_ = width;
-      latest_gray_height_ = height;
-      latest_timestamp_ns_ = image_timestamp_ns;
-      latest_fx_ = fx;
-      latest_fy_ = fy;
-      latest_cx_ = cx;
-      latest_cy_ = cy;
-      latest_qx_ = quad.x;
-      latest_qy_ = quad.y;
-      latest_qz_ = quad.z;
-      latest_qw_ = quad.w;
-      latest_tx_ = trans[0];
-      latest_ty_ = trans[1];
-      latest_tz_ = trans[2];
-      has_latest_stream_frame_ = true;
-    }
 
 #if HELLO_AR_ENABLE_MOBILI_VLP
-    if (mobili::vlp::Recording()) {
-      mobili::vlp::RecordImage(image_timestamp_ns, width, height, y, fx, fy, cx,
-                               cy);
-    }
+        if (need_record_image) {
+          mobili::vlp::RecordImage(image_timestamp_ns, width, height, y, fx, fy, cx,
+                                   cy);
+        }
 #endif
-    ArImage_release(image);
+      }
+      ArImage_release(image);
+    }
   }
 
 #if HELLO_AR_ENABLE_MOBILI_VLP

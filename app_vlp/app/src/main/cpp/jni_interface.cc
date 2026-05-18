@@ -78,6 +78,11 @@ JNI_METHOD(void, setRenderEnabled)
   native(native_application)->setRenderEnabled(enabled == JNI_TRUE);
 }
 
+JNI_METHOD(void, setStreamConsumerActive)
+(JNIEnv *, jclass, jlong native_application, jboolean active) {
+  native(native_application)->setStreamConsumerActive(active == JNI_TRUE);
+}
+
 JNI_METHOD(void, destroyNativeApplication)
 (JNIEnv *, jclass, jlong native_application) {
   delete native(native_application);
@@ -176,6 +181,18 @@ JNI_METHOD(jbyteArray, getLatestGrayImage)
     env->SetByteArrayRegion(
         output, 0, static_cast<jsize>(gray.size()),
         reinterpret_cast<const jbyte*>(gray.data()));
+  }
+  return output;
+}
+
+JNI_METHOD(jbyteArray, getLatestYuvNv21Image)
+(JNIEnv* env, jclass, jlong native_application) {
+  std::vector<uint8_t> yuv = native(native_application)->getLatestYuvNv21Image();
+  jbyteArray output = env->NewByteArray(static_cast<jsize>(yuv.size()));
+  if (output != nullptr && !yuv.empty()) {
+    env->SetByteArrayRegion(
+        output, 0, static_cast<jsize>(yuv.size()),
+        reinterpret_cast<const jbyte*>(yuv.data()));
   }
   return output;
 }

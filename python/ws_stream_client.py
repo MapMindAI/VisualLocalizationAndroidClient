@@ -10,22 +10,19 @@ import grpc
 import numpy as np
 
 
-FRAME_MAGIC = 0x564C5031  # "VLP1"
+FRAME_MAGIC = 0x564C5032  # "VLP2"
 FRAME_HEADER_STRUCT = struct.Struct("<IQII11f")
 FRAME_HEADER_SIZE = FRAME_HEADER_STRUCT.size
 
 
 def draw_overlay(
-    gray: bytes,
-    width: int,
-    height: int,
+    bgr: np.ndarray,
     timestamp_ns: int,
     intrinsics: Dict[str, Any],
     pose: Dict[str, Any],
     fps: float,
 ) -> np.ndarray:
-    img = np.frombuffer(gray, dtype=np.uint8).reshape((height, width))
-    bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    height, width = bgr.shape[:2]
 
     fx = float(intrinsics["fx"])
     fy = float(intrinsics["fy"])
@@ -127,9 +124,12 @@ def main() -> int:
             if magic != FRAME_MAGIC:
                 continue
 
-            expected = width * height
-            gray = payload[FRAME_HEADER_SIZE : FRAME_HEADER_SIZE + expected]
-            if len(gray) != expected:
+            jpeg_bytes = payload[FRAME_HEADER_SIZE:]
+            if len(jpeg_bytes) == 0:
+                continue
+            jpg_array = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            image_bgr = cv2.imdecode(jpg_array, cv2.IMREAD_COLOR)
+            if image_bgr is None:
                 continue
 
             intrinsics = {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
@@ -140,7 +140,7 @@ def main() -> int:
             elapsed = time.time() - state["started_at"]
             fps = (frame_idx / elapsed) if elapsed > 0 else 0.0
 
-            overlay = draw_overlay(gray, width, height, timestamp_ns, intrinsics, pose, fps)
+            overlay = draw_overlay(image_bgr, timestamp_ns, intrinsics, pose, fps)
             cv2.imshow(window_name, overlay)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
