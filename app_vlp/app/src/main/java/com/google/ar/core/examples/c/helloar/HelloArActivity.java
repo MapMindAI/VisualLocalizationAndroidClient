@@ -52,6 +52,8 @@ public class HelloArActivity extends AppCompatActivity
   private static final String TAG = HelloArActivity.class.getSimpleName();
   private static final int SNACKBAR_UPDATE_INTERVAL_MILLIS = 1000; // In milliseconds.
   private static final int DEBUGMSG_UPDATE_INTERVAL_MILLIS = 200; // In milliseconds.
+  private static final int STREAM_UPDATE_INTERVAL_MILLIS = 33; // ~30 FPS target.
+  private static final int STREAM_SERVER_PORT = 8765;
   private static final int NUM_DEPTH_SETTINGS_CHECKBOXES = 2;
   private static final int NUM_INSTANT_PLACEMENT_SETTINGS_CHECKBOXES = 1;
 
@@ -74,6 +76,7 @@ public class HelloArActivity extends AppCompatActivity
   private GestureDetector gestureDetector;
 
   private Snackbar snackbar;
+  private StreamWebSocketServer streamWebSocketServer;
   // private Handler planeStatusCheckingHandler;
   // private final Runnable planeStatusCheckingRunnable =
   //     new Runnable() {
@@ -96,6 +99,7 @@ public class HelloArActivity extends AppCompatActivity
   //       }
   //     };
   private Handler debugStatusCheckingHandler;
+  private Handler streamStatusCheckingHandler;
   private final Runnable debugStatusCheckingRunnable =
       new Runnable() {
         @Override
@@ -113,6 +117,22 @@ public class HelloArActivity extends AppCompatActivity
                 debugStatusCheckingRunnable, DEBUGMSG_UPDATE_INTERVAL_MILLIS);
           } catch (Exception e) {
             Log.e(TAG, e.getMessage());
+          }
+        }
+      };
+  private final Runnable streamStatusCheckingRunnable =
+      new Runnable() {
+        @Override
+        public void run() {
+          try {
+            if (streamWebSocketServer != null) {
+              streamWebSocketServer.publishLatestFrame(nativeApplication);
+            }
+          } catch (Exception e) {
+            Log.e(TAG, "streamStatusCheckingRunnable failed", e);
+          } finally {
+            streamStatusCheckingHandler.postDelayed(
+                streamStatusCheckingRunnable, STREAM_UPDATE_INTERVAL_MILLIS);
           }
         }
       };
@@ -159,9 +179,13 @@ public class HelloArActivity extends AppCompatActivity
 
     JniInterface.assetManager = getAssets();
     nativeApplication = JniInterface.createNativeApplication(getAssets());
+    streamWebSocketServer = new StreamWebSocketServer(STREAM_SERVER_PORT);
+    streamWebSocketServer.start();
+    Log.i(TAG, "WebSocket stream server started at ws://0.0.0.0:" + STREAM_SERVER_PORT);
 
     // planeStatusCheckingHandler = new Handler();
     debugStatusCheckingHandler = new Handler();
+    streamStatusCheckingHandler = new Handler();
 
     depthSettings.onCreate(this);
     instantPlacementSettings.onCreate(this);
@@ -271,6 +295,8 @@ public class HelloArActivity extends AppCompatActivity
     //     planeStatusCheckingRunnable, SNACKBAR_UPDATE_INTERVAL_MILLIS);
     debugStatusCheckingHandler.postDelayed(
         debugStatusCheckingRunnable, DEBUGMSG_UPDATE_INTERVAL_MILLIS);
+    streamStatusCheckingHandler.postDelayed(
+        streamStatusCheckingRunnable, STREAM_UPDATE_INTERVAL_MILLIS);
 
     // Listen to display changed events to detect 180° rotation, which does not cause a config
     // change or view resize.
@@ -285,6 +311,7 @@ public class HelloArActivity extends AppCompatActivity
 
     // planeStatusCheckingHandler.removeCallbacks(planeStatusCheckingRunnable);
     debugStatusCheckingHandler.removeCallbacks(debugStatusCheckingRunnable);
+    streamStatusCheckingHandler.removeCallbacks(streamStatusCheckingRunnable);
 
     getSystemService(DisplayManager.class).unregisterDisplayListener(this);
   }
@@ -292,6 +319,16 @@ public class HelloArActivity extends AppCompatActivity
   @Override
   public void onDestroy() {
     super.onDestroy();
+
+    if (streamWebSocketServer != null) {
+      try {
+        streamWebSocketServer.stop(1000);
+      } catch (InterruptedException e) {
+        Log.e(TAG, "Failed to stop WebSocket server cleanly", e);
+        Thread.currentThread().interrupt();
+      }
+      streamWebSocketServer = null;
+    }
 
     // Synchronized to avoid racing onDrawFrame.
     synchronized (this) {

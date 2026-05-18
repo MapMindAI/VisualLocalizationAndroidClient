@@ -50,6 +50,11 @@ public class JniInterface {
 
   public static native int onStartRec(String record_name);
   public static native void onStopRec();
+  public static native boolean hasLatestStreamFrame(long nativeApplication);
+  public static native byte[] getLatestGrayImage(long nativeApplication);
+  public static native long[] getLatestStreamDimensionsAndTimestamp(long nativeApplication);
+  public static native float[] getLatestStreamIntrinsics(long nativeApplication);
+  public static native float[] getLatestStreamPose(long nativeApplication);
 
   /**
    * Called on the OpenGL thread before onGlSurfaceDrawFrame when the view port width, height, or

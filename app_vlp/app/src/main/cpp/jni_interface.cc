@@ -157,6 +157,78 @@ JNI_METHOD(jboolean, hasDetectedPlanes)
       native(native_application)->HasDetectedPlanes() ? JNI_TRUE : JNI_FALSE);
 }
 
+JNI_METHOD(jboolean, hasLatestStreamFrame)
+(JNIEnv*, jclass, jlong native_application) {
+  return static_cast<jboolean>(
+      native(native_application)->hasLatestStreamFrame() ? JNI_TRUE : JNI_FALSE);
+}
+
+JNI_METHOD(jbyteArray, getLatestGrayImage)
+(JNIEnv* env, jclass, jlong native_application) {
+  std::vector<uint8_t> gray = native(native_application)->getLatestGrayImage();
+  jbyteArray output = env->NewByteArray(static_cast<jsize>(gray.size()));
+  if (output != nullptr && !gray.empty()) {
+    env->SetByteArrayRegion(
+        output, 0, static_cast<jsize>(gray.size()),
+        reinterpret_cast<const jbyte*>(gray.data()));
+  }
+  return output;
+}
+
+JNI_METHOD(jlongArray, getLatestStreamDimensionsAndTimestamp)
+(JNIEnv* env, jclass, jlong native_application) {
+  int64_t timestamp_ns = 0;
+  int width = 0;
+  int height = 0;
+  native(native_application)->getLatestStreamMetadata(
+      &timestamp_ns, &width, &height, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+  jlong values[3] = {timestamp_ns, static_cast<jlong>(width),
+                     static_cast<jlong>(height)};
+  jlongArray output = env->NewLongArray(3);
+  if (output != nullptr) {
+    env->SetLongArrayRegion(output, 0, 3, values);
+  }
+  return output;
+}
+
+JNI_METHOD(jfloatArray, getLatestStreamIntrinsics)
+(JNIEnv* env, jclass, jlong native_application) {
+  float fx = 0.0f;
+  float fy = 0.0f;
+  float cx = 0.0f;
+  float cy = 0.0f;
+  native(native_application)->getLatestStreamMetadata(
+      nullptr, nullptr, nullptr, &fx, &fy, &cx, &cy, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, nullptr);
+  jfloat values[4] = {fx, fy, cx, cy};
+  jfloatArray output = env->NewFloatArray(4);
+  if (output != nullptr) {
+    env->SetFloatArrayRegion(output, 0, 4, values);
+  }
+  return output;
+}
+
+JNI_METHOD(jfloatArray, getLatestStreamPose)
+(JNIEnv* env, jclass, jlong native_application) {
+  float qx = 0.0f;
+  float qy = 0.0f;
+  float qz = 0.0f;
+  float qw = 1.0f;
+  float tx = 0.0f;
+  float ty = 0.0f;
+  float tz = 0.0f;
+  native(native_application)->getLatestStreamMetadata(
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &qx, &qy,
+      &qz, &qw, &tx, &ty, &tz);
+  jfloat values[7] = {qx, qy, qz, qw, tx, ty, tz};
+  jfloatArray output = env->NewFloatArray(7);
+  if (output != nullptr) {
+    env->SetFloatArrayRegion(output, 0, 7, values);
+  }
+  return output;
+}
+
 JNIEnv *GetJniEnv() {
   JNIEnv *env;
   jint result = g_vm->AttachCurrentThread(&env, nullptr);

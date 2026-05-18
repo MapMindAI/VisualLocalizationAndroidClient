@@ -23,9 +23,11 @@
 #include <jni.h>
 
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "arcore_c_api.h"
 #include "background_renderer.h"
@@ -90,6 +92,12 @@ class HelloArApplication {
   int PublishImage();
   bool popDebugMessage();
   std::string getDebugMessage();
+  bool hasLatestStreamFrame() const;
+  std::vector<uint8_t> getLatestGrayImage() const;
+  void getLatestStreamMetadata(int64_t* timestamp_ns, int* width, int* height,
+                               float* fx, float* fy, float* cx, float* cy,
+                               float* qx, float* qy, float* qz, float* qw,
+                               float* tx, float* ty, float* tz) const;
 
  private:
   glm::mat3 GetTextureTransformMatrix(const ArSession* session,
@@ -134,6 +142,24 @@ class HelloArApplication {
 
   bool publishing_ = false;
   ArCameraIntrinsics *camera_intrinsics_;
+
+  mutable std::mutex stream_mutex_;
+  std::vector<uint8_t> latest_gray_image_;
+  int latest_gray_width_ = 0;
+  int latest_gray_height_ = 0;
+  int64_t latest_timestamp_ns_ = 0;
+  float latest_fx_ = 0.0f;
+  float latest_fy_ = 0.0f;
+  float latest_cx_ = 0.0f;
+  float latest_cy_ = 0.0f;
+  float latest_qx_ = 0.0f;
+  float latest_qy_ = 0.0f;
+  float latest_qz_ = 0.0f;
+  float latest_qw_ = 1.0f;
+  float latest_tx_ = 0.0f;
+  float latest_ty_ = 0.0f;
+  float latest_tz_ = 0.0f;
+  bool has_latest_stream_frame_ = false;
 };
 }  // namespace hello_ar
 

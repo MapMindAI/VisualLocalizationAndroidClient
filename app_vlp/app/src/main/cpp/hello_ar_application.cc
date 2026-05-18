@@ -18,7 +18,9 @@
 
 #include <android/asset_manager.h>
 
+#include <algorithm>
 #include <array>
+#include <cstring>
 
 #include "arcore_c_api.h"
 #include "plane_renderer.h"
@@ -254,6 +256,37 @@ std::string HelloArApplication::getDebugMessage() {
 #endif
 }
 
+bool HelloArApplication::hasLatestStreamFrame() const {
+  std::lock_guard<std::mutex> lock(stream_mutex_);
+  return has_latest_stream_frame_;
+}
+
+std::vector<uint8_t> HelloArApplication::getLatestGrayImage() const {
+  std::lock_guard<std::mutex> lock(stream_mutex_);
+  return latest_gray_image_;
+}
+
+void HelloArApplication::getLatestStreamMetadata(
+    int64_t* timestamp_ns, int* width, int* height, float* fx, float* fy,
+    float* cx, float* cy, float* qx, float* qy, float* qz, float* qw,
+    float* tx, float* ty, float* tz) const {
+  std::lock_guard<std::mutex> lock(stream_mutex_);
+  if (timestamp_ns != nullptr) *timestamp_ns = latest_timestamp_ns_;
+  if (width != nullptr) *width = latest_gray_width_;
+  if (height != nullptr) *height = latest_gray_height_;
+  if (fx != nullptr) *fx = latest_fx_;
+  if (fy != nullptr) *fy = latest_fy_;
+  if (cx != nullptr) *cx = latest_cx_;
+  if (cy != nullptr) *cy = latest_cy_;
+  if (qx != nullptr) *qx = latest_qx_;
+  if (qy != nullptr) *qy = latest_qy_;
+  if (qz != nullptr) *qz = latest_qz_;
+  if (qw != nullptr) *qw = latest_qw_;
+  if (tx != nullptr) *tx = latest_tx_;
+  if (ty != nullptr) *ty = latest_ty_;
+  if (tz != nullptr) *tz = latest_tz_;
+}
+
 void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
                                      bool useDepthForOcclusion) {
   // Render the scene.
@@ -307,48 +340,95 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
                                /*near=*/0.01f, /*far=*/1000.f,
                                glm::value_ptr(projection_mat));
 
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  if (mobili::vlp::Recording()) {
-    ArCamera_getImageIntrinsics(ar_session_, ar_camera, camera_intrinsics_);
-    float fx, fy;
-    float cx, cy;
-    ArCameraIntrinsics_getFocalLength(ar_session_, camera_intrinsics_, &fx, &fy);
-    ArCameraIntrinsics_getPrincipalPoint(ar_session_, camera_intrinsics_, &cx, &cy);
+  int64_t frame_timestamp_ns = 0;
+  ArFrame_getTimestamp(ar_session_, ar_frame_, &frame_timestamp_ns);
 
-    ArImage* image = nullptr;
-    ArStatus status = ArFrame_acquireCameraImage(ar_session_, ar_frame_, &image);
-    if (status != AR_SUCCESS) {  // Image not available this frame.
-      LOGI("Failed to acquire image.");
+  // https://github.com/deepmirrorinc/CoreMap/blob/cb9d3db94893794d581135ad8ed30215d9071b5b/map/common/coordinate_conversion.h#L140
+  glm::mat4 cam_world = glm::inverse(view_mat);
+  glm::vec3 trans = glm::vec3(cam_world[3]);
+  glm::quat quad_tmp = glm::quat_cast(cam_world);
+
+  // The camera has a 90 deg additional rotation.
+  glm::quat offset_quad =
+      glm::quat(glm::vec3(0.0f, 0.0f, glm::radians(-90.0f)));
+  glm::quat quad = quad_tmp * offset_quad;
+
+  ArCamera_getImageIntrinsics(ar_session_, ar_camera, camera_intrinsics_);
+  float fx, fy;
+  float cx, cy;
+  ArCameraIntrinsics_getFocalLength(ar_session_, camera_intrinsics_, &fx, &fy);
+  ArCameraIntrinsics_getPrincipalPoint(ar_session_, camera_intrinsics_, &cx, &cy);
+
+  ArImage* image = nullptr;
+  ArStatus image_status = ArFrame_acquireCameraImage(ar_session_, ar_frame_, &image);
+  if (image_status == AR_SUCCESS) {
+    int width = 0;
+    int height = 0;
+    int64_t image_timestamp_ns = 0;
+    ArImage_getTimestamp(ar_session_, image, &image_timestamp_ns);
+    ArImage_getWidth(ar_session_, image, &width);
+    ArImage_getHeight(ar_session_, image, &height);
+
+    const uint8_t* y = nullptr;
+    int y_length = 0;
+    ArImage_getPlaneData(ar_session_, image, 0, &y, &y_length);
+
+    int32_t row_stride = width;
+    int32_t pixel_stride = 1;
+    ArImage_getPlaneRowStride(ar_session_, image, 0, &row_stride);
+    ArImage_getPlanePixelStride(ar_session_, image, 0, &pixel_stride);
+    row_stride = std::max(1, row_stride);
+    pixel_stride = std::max(1, pixel_stride);
+
+    std::vector<uint8_t> gray_buffer(static_cast<size_t>(width) *
+                                     static_cast<size_t>(height));
+    if (pixel_stride == 1 && row_stride == width) {
+      const size_t bytes_to_copy =
+          std::min(gray_buffer.size(), static_cast<size_t>(std::max(0, y_length)));
+      std::memcpy(gray_buffer.data(), y, bytes_to_copy);
     } else {
-      int width, height;
-      int64_t image_ns;
-      ArImage_getTimestamp(ar_session_, image, &image_ns);
-      ArImage_getWidth(ar_session_, image, &width);
-      ArImage_getHeight(ar_session_, image, &height);
-
-      const uint8_t* y;
-      int yLength;
-      ArImage_getPlaneData(ar_session_, image, 0, &y, &yLength);
-      mobili::vlp::RecordImage(image_ns, width, height, y, fx, fy, cx, cy);
+      for (int r = 0; r < height; ++r) {
+        const uint8_t* src_row = y + static_cast<size_t>(r) * row_stride;
+        uint8_t* dst_row = gray_buffer.data() + static_cast<size_t>(r) * width;
+        for (int c = 0; c < width; ++c) {
+          dst_row[c] = src_row[static_cast<size_t>(c) * pixel_stride];
+        }
+      }
     }
+
+    {
+      std::lock_guard<std::mutex> lock(stream_mutex_);
+      latest_gray_image_ = std::move(gray_buffer);
+      latest_gray_width_ = width;
+      latest_gray_height_ = height;
+      latest_timestamp_ns_ = image_timestamp_ns;
+      latest_fx_ = fx;
+      latest_fy_ = fy;
+      latest_cx_ = cx;
+      latest_cy_ = cy;
+      latest_qx_ = quad.x;
+      latest_qy_ = quad.y;
+      latest_qz_ = quad.z;
+      latest_qw_ = quad.w;
+      latest_tx_ = trans[0];
+      latest_ty_ = trans[1];
+      latest_tz_ = trans[2];
+      has_latest_stream_frame_ = true;
+    }
+
+#if HELLO_AR_ENABLE_MOBILI_VLP
+    if (mobili::vlp::Recording()) {
+      mobili::vlp::RecordImage(image_timestamp_ns, width, height, y, fx, fy, cx,
+                               cy);
+    }
+#endif
     ArImage_release(image);
   }
-  // push the pose to result
-  {
-    int64_t timestamp;
-    ArFrame_getTimestamp(ar_session_, ar_frame_, &timestamp);
 
-    // https://github.com/deepmirrorinc/CoreMap/blob/cb9d3db94893794d581135ad8ed30215d9071b5b/map/common/coordinate_conversion.h#L140
-    glm::mat4 cam_world = glm::inverse(view_mat);
-    glm::vec3 trans = glm::vec3(cam_world[3]);
-    glm::quat quad_tmp = glm::quat_cast(cam_world);
-
-    // the camera has a 90 deg additional rotation
-    glm::quat offset_quad = glm::quat(glm::vec3(0.0f, 0.0f, glm::radians(-90.0f))); // Rotate 90° around Z-axis
-    glm::quat quad = quad_tmp * offset_quad;
-
-    mobili::vlp::PushVioCameraPose(timestamp, quad.x, quad.y, quad.z, quad.w, trans[0], trans[1], trans[2], mobili::vlp::OPENGL);
-  }
+#if HELLO_AR_ENABLE_MOBILI_VLP
+  mobili::vlp::PushVioCameraPose(frame_timestamp_ns, quad.x, quad.y, quad.z,
+                                 quad.w, trans[0], trans[1], trans[2],
+                                 mobili::vlp::OPENGL);
 #endif  // #if HELLO_AR_ENABLE_MOBILI_VLP
 
   background_renderer_.Draw(ar_session_, ar_frame_,
