@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mapping/common/pose_types.h"
+
 #include <opencv2/core/mat.hpp>
 
 #include <cstdint>
@@ -12,22 +14,13 @@
 #include <thread>
 
 namespace da3client {
-
-struct FramePose {
-  float qx = 0.0f;
-  float qy = 0.0f;
-  float qz = 0.0f;
-  float qw = 1.0f;
-  float tx = 0.0f;
-  float ty = 0.0f;
-  float tz = 0.0f;
-};
+using mapping::Pose;
 
 struct Keyframe {
   int idx = 0;
   uint64_t timestamp_ns = 0;
   cv::Mat image_bgr;
-  FramePose pose;
+  Pose pose;
   float fx = 0.0f;
   float fy = 0.0f;
   float cx = 0.0f;
@@ -39,7 +32,7 @@ struct Da3Output {
   cv::Mat depth_metric;
   std::string scale_text = "scale: n/a (pose-translation)";
   std::string pair_label;
-  FramePose pose;
+  Pose pose;
   float fx = 0.0f;
   float fy = 0.0f;
   float cx = 0.0f;

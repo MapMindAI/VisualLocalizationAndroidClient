@@ -1,6 +1,6 @@
-#include "frame_protocol.h"
+#include "mapping/common/frame_protocol.h"
 
-#include "utils.h"
+#include "mapping/common/utils.h"
 
 #include <Eigen/Geometry>
 #include <sophus/se3.hpp>
@@ -31,17 +31,20 @@ std::optional<FramePacket> ParseFramePayload(const std::string& payload) {
   packet.fy = vlputil::ReadF32LE(data + 24);
   packet.cx = vlputil::ReadF32LE(data + 28);
   packet.cy = vlputil::ReadF32LE(data + 32);
-  packet.pose.qx = vlputil::ReadF32LE(data + 36);
-  packet.pose.qy = vlputil::ReadF32LE(data + 40);
-  packet.pose.qz = vlputil::ReadF32LE(data + 44);
-  packet.pose.qw = vlputil::ReadF32LE(data + 48);
-  packet.pose.tx = vlputil::ReadF32LE(data + 52);
-  packet.pose.ty = vlputil::ReadF32LE(data + 56);
-  packet.pose.tz = vlputil::ReadF32LE(data + 60);
+  const float qx = vlputil::ReadF32LE(data + 36);
+  const float qy = vlputil::ReadF32LE(data + 40);
+  const float qz = vlputil::ReadF32LE(data + 44);
+  const float qw = vlputil::ReadF32LE(data + 48);
+  const float tx = vlputil::ReadF32LE(data + 52);
+  const float ty = vlputil::ReadF32LE(data + 56);
+  const float tz = vlputil::ReadF32LE(data + 60);
+  Eigen::Quaternionf q(qw, qx, qy, qz);
+  q.normalize();
+  packet.pose = Sophus::SE3f(q, Eigen::Vector3f(tx, ty, tz));
 
-  const Sophus::SE3d kTransformCameraToOpenGLDevice(
-      Eigen::Quaterniond(0, 1, 0, 0), Eigen::Vector3d::Zero());
-  packet.pose = vlputil::SE3ToPose(vlputil::PoseToSE3(packet.pose) * kTransformCameraToOpenGLDevice);
+  const Sophus::SE3f kTransformCameraToOpenGLDevice(
+      Eigen::Quaternionf(0.0f, 1.0f, 0.0f, 0.0f), Eigen::Vector3f::Zero());
+  packet.pose = packet.pose * kTransformCameraToOpenGLDevice;
 
   packet.jpeg_bytes.assign(data + kFrameHeaderSize, data + payload.size());
   if (packet.jpeg_bytes.empty()) {

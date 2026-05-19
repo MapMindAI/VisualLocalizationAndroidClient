@@ -1,6 +1,6 @@
 #pragma once
 
-#include "da3_onnx_runner.h"
+#include "mapping/common/pose_types.h"
 
 #include <grpcpp/support/byte_buffer.h>
 #include <sophus/se3.hpp>
@@ -13,15 +13,14 @@
 
 namespace vlputil {
 
-Sophus::SE3d PoseToSE3(const da3client::FramePose& p);
-da3client::FramePose SE3ToPose(const Sophus::SE3d& T);
+Sophus::SE3d PoseToSE3d(const Sophus::SE3f& p);
 
 uint32_t ReadU32LE(const uint8_t* p);
 uint64_t ReadU64LE(const uint8_t* p);
 float ReadF32LE(const uint8_t* p);
 
-double TransDelta(const da3client::FramePose& a, const da3client::FramePose& b);
-double QuatAngleDeg(const da3client::FramePose& a, const da3client::FramePose& b);
+double TransDelta(const Sophus::SE3f& a, const Sophus::SE3f& b);
+double QuatAngleDeg(const Sophus::SE3f& a, const Sophus::SE3f& b);
 
 std::string ByteBufferToString(grpc::ByteBuffer* buffer);
 std::string Base64Encode(const uint8_t* data, size_t len);

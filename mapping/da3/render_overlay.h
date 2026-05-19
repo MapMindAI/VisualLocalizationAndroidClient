@@ -1,6 +1,6 @@
 #pragma once
 
-#include "frame_protocol.h"
+#include "mapping/common/frame_protocol.h"
 
 #include <opencv2/core/mat.hpp>
 

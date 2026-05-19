@@ -1,6 +1,6 @@
 #pragma once
 
-#include "da3_onnx_runner.h"
+#include "mapping/common/pose_types.h"
 
 #include <cstdint>
 #include <optional>
@@ -17,7 +17,7 @@ struct FramePacket {
   float fy = 0.0f;
   float cx = 0.0f;
   float cy = 0.0f;
-  da3client::FramePose pose;
+  mapping::Pose pose;
   std::vector<uint8_t> jpeg_bytes;
 };
 

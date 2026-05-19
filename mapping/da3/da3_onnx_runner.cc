@@ -1,5 +1,6 @@
-#include "da3_onnx_runner.h"
+#include "mapping/da3/da3_onnx_runner.h"
 
+#include <Eigen/Geometry>
 #include <glog/logging.h>
 #include <onnxruntime_cxx_api.h>
 
@@ -10,7 +11,6 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -20,10 +20,11 @@
 namespace da3client {
 namespace {
 
-double TransDelta(const FramePose& a, const FramePose& b) {
-  const double dx = static_cast<double>(b.tx) - static_cast<double>(a.tx);
-  const double dy = static_cast<double>(b.ty) - static_cast<double>(a.ty);
-  const double dz = static_cast<double>(b.tz) - static_cast<double>(a.tz);
+double TransDelta(const Pose& a, const Pose& b) {
+  const Eigen::Vector3f dt = b.translation() - a.translation();
+  const double dx = static_cast<double>(dt.x());
+  const double dy = static_cast<double>(dt.y());
+  const double dz = static_cast<double>(dt.z());
   return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
@@ -350,8 +351,8 @@ struct Da3OnnxRunner::Impl {
     return false;
   }
 
-  std::optional<double> ComputeScaleFromExtrinsics(const Ort::Value& value, const FramePose& pose1,
-                                                    const FramePose& pose2) const {
+  std::optional<double> ComputeScaleFromExtrinsics(const Ort::Value& value, const Pose& pose1,
+                                                   const Pose& pose2) const {
     if (!value.IsTensor()) {
       return std::nullopt;
     }

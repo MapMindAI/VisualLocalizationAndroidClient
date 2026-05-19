@@ -1,4 +1,4 @@
-#include "render_overlay.h"
+#include "mapping/da3/render_overlay.h"
 
 #include <opencv2/imgproc.hpp>
 
@@ -22,9 +22,11 @@ void DrawOverlay(cv::Mat& image_bgr, const vlpstream::FramePacket& packet, doubl
       cv::format("fps: %.2f", fps),
       cv::format("intrinsics fx=%.2f fy=%.2f cx=%.2f cy=%.2f", packet.fx, packet.fy, packet.cx,
                  packet.cy),
-      cv::format("pose q=(%.4f, %.4f, %.4f, %.4f)", packet.pose.qx, packet.pose.qy,
-                 packet.pose.qz, packet.pose.qw),
-      cv::format("pose t=(%.4f, %.4f, %.4f)", packet.pose.tx, packet.pose.ty, packet.pose.tz),
+      cv::format("pose q=(%.4f, %.4f, %.4f, %.4f)", packet.pose.unit_quaternion().x(),
+                 packet.pose.unit_quaternion().y(), packet.pose.unit_quaternion().z(),
+                 packet.pose.unit_quaternion().w()),
+      cv::format("pose t=(%.4f, %.4f, %.4f)", packet.pose.translation().x(),
+                 packet.pose.translation().y(), packet.pose.translation().z()),
       "press q to quit",
   };
 

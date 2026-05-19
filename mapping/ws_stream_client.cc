@@ -5,11 +5,11 @@
 #include <grpcpp/security/credentials.h>
 #include <grpcpp/support/sync_stream.h>
 
-#include "da3_onnx_runner.h"
-#include "frame_protocol.h"
-#include "render_overlay.h"
-#include "simple_websocket_server.h"
-#include "utils.h"
+#include "mapping/backend/simple_websocket_server.h"
+#include "mapping/common/frame_protocol.h"
+#include "mapping/common/utils.h"
+#include "mapping/da3/da3_onnx_runner.h"
+#include "mapping/da3/render_overlay.h"
 
 #include <Eigen/Geometry>
 #include <gflags/gflags.h>
@@ -24,8 +24,6 @@
 #include <cmath>
 #include <cstdint>
 #include <deque>
-#include <iostream>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -52,7 +50,7 @@ DEFINE_bool(enable_websocket, true, "Enable websocket stream server.");
 DEFINE_int32(websocket_port, 9002, "Websocket server port.");
 DEFINE_int32(web_depth_history, 5, "Recent depth clouds kept for web map.");
 DEFINE_int32(web_depth_step, 6, "Pixel stride when generating web depth cloud.");
-DEFINE_string(web_client_html, "bazel/web_client.html", "Path to web client html.");
+DEFINE_string(web_client_html, "mapping/backend/web_client.html", "Path to web client html.");
 DEFINE_double(web_send_hz, 10.0, "Websocket broadcast rate.");
 DEFINE_int32(web_max_traj_points, 1200, "Max trajectory points sent to browser.");
 DEFINE_int32(web_max_cloud_points, 12000, "Max points per depth cloud sent to browser.");
@@ -219,7 +217,8 @@ int main(int argc, char** argv) {
     cv::hconcat(overlay, depth_panel, combined);
     cv::imshow(window_name, combined);
 
-    trajectory.push_back({packet.pose.tx, packet.pose.ty, packet.pose.tz});
+    trajectory.push_back(
+        {packet.pose.translation().x(), packet.pose.translation().y(), packet.pose.translation().z()});
     while (trajectory.size() > 5000) {
       trajectory.pop_front();
     }
@@ -227,7 +226,7 @@ int main(int argc, char** argv) {
       auto out = da3_worker->GetLatestOutput();
       if (out.has_value() && !out->depth_metric.empty() && out->pair_label != last_cloud_pair) {
         const int step = std::max(1, FLAGS_web_depth_step);
-        const Sophus::SE3d T_w_c = vlputil::PoseToSE3(out->pose);
+        const Sophus::SE3d T_w_c = vlputil::PoseToSE3d(out->pose);
         const Eigen::Matrix3d R = T_w_c.so3().matrix();
         const Eigen::Vector3d t = T_w_c.translation();
         std::vector<std::array<float, 3>> cloud;
@@ -289,8 +288,8 @@ int main(int argc, char** argv) {
       oss << "\"image_jpeg_b64\":\"" << img_b64 << "\",";
       oss << "\"fps\":" << fps << ",";
       oss << "\"pose\":{"
-          << "\"tx\":" << packet.pose.tx << ",\"ty\":" << packet.pose.ty << ",\"tz\":"
-          << packet.pose.tz << "},";
+          << "\"tx\":" << packet.pose.translation().x() << ",\"ty\":" << packet.pose.translation().y()
+          << ",\"tz\":" << packet.pose.translation().z() << "},";
       oss << "\"scale_text\":\"" << vlputil::JsonEscape(latest_scale_text) << "\",";
       oss << "\"da3_status\":\"" << vlputil::JsonEscape(latest_da3_status) << "\",";
       oss << "\"trajectory\":[";

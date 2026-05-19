@@ -1,4 +1,4 @@
-#include "utils.h"
+#include "mapping/common/utils.h"
 
 #include <Eigen/Geometry>
 
@@ -9,27 +9,8 @@
 
 namespace vlputil {
 
-Sophus::SE3d PoseToSE3(const da3client::FramePose& p) {
-  Eigen::Quaterniond q(static_cast<double>(p.qw), static_cast<double>(p.qx),
-                       static_cast<double>(p.qy), static_cast<double>(p.qz));
-  q.normalize();
-  Eigen::Vector3d t(static_cast<double>(p.tx), static_cast<double>(p.ty),
-                    static_cast<double>(p.tz));
-  return Sophus::SE3d(q, t);
-}
-
-da3client::FramePose SE3ToPose(const Sophus::SE3d& T) {
-  const Eigen::Quaterniond q = T.unit_quaternion();
-  const Eigen::Vector3d t = T.translation();
-  da3client::FramePose p;
-  p.qx = static_cast<float>(q.x());
-  p.qy = static_cast<float>(q.y());
-  p.qz = static_cast<float>(q.z());
-  p.qw = static_cast<float>(q.w());
-  p.tx = static_cast<float>(t.x());
-  p.ty = static_cast<float>(t.y());
-  p.tz = static_cast<float>(t.z());
-  return p;
+Sophus::SE3d PoseToSE3d(const Sophus::SE3f& p) {
+  return p.cast<double>();
 }
 
 uint32_t ReadU32LE(const uint8_t* p) {
@@ -51,20 +32,23 @@ float ReadF32LE(const uint8_t* p) {
   return out;
 }
 
-double TransDelta(const da3client::FramePose& a, const da3client::FramePose& b) {
-  const double dx = static_cast<double>(b.tx) - static_cast<double>(a.tx);
-  const double dy = static_cast<double>(b.ty) - static_cast<double>(a.ty);
-  const double dz = static_cast<double>(b.tz) - static_cast<double>(a.tz);
+double TransDelta(const Sophus::SE3f& a, const Sophus::SE3f& b) {
+  const Eigen::Vector3f dt = b.translation() - a.translation();
+  const double dx = static_cast<double>(dt.x());
+  const double dy = static_cast<double>(dt.y());
+  const double dz = static_cast<double>(dt.z());
   return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-double QuatAngleDeg(const da3client::FramePose& a, const da3client::FramePose& b) {
+double QuatAngleDeg(const Sophus::SE3f& a, const Sophus::SE3f& b) {
+  const Eigen::Quaternionf qa = a.unit_quaternion();
+  const Eigen::Quaternionf qb = b.unit_quaternion();
   std::array<double, 4> q1 = {
-      static_cast<double>(a.qx), static_cast<double>(a.qy),
-      static_cast<double>(a.qz), static_cast<double>(a.qw)};
+      static_cast<double>(qa.x()), static_cast<double>(qa.y()),
+      static_cast<double>(qa.z()), static_cast<double>(qa.w())};
   std::array<double, 4> q2 = {
-      static_cast<double>(b.qx), static_cast<double>(b.qy),
-      static_cast<double>(b.qz), static_cast<double>(b.qw)};
+      static_cast<double>(qb.x()), static_cast<double>(qb.y()),
+      static_cast<double>(qb.z()), static_cast<double>(qb.w())};
   auto norm4 = [](const std::array<double, 4>& q) {
     return std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
   };
