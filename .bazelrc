@@ -1,0 +1,34 @@
+# +------------------------------------------------------------+
+# | Startup Options                                            |
+# +------------------------------------------------------------+
+startup --batch_cpu_scheduling
+startup --host_jvm_args=-XX:-UseParallelGC
+
+# +------------------------------------------------------------+
+# | Build/Test Configurations                                  |
+# +------------------------------------------------------------+
+build --output_filter="^//"
+build --show_timestamps
+build --spawn_strategy=local
+build --verbose_failures
+build -c opt
+
+build --per_file_copt="-\\.$@-Wall,-Wextra,-Werror"
+build --per_file_copt="-\\.$,external/.*@-w"
+build --per_file_copt="-\\.$,third_party/.*@-w"
+
+build --cxxopt="-std=c++17"
+build --copt="-Werror=switch"
+build --cxxopt="-Werror=reorder"
+build --cxxopt="-fdiagnostics-color=always"
+build --cxxopt="-Wno-error=unused-variable"
+build --cxxopt="-Wno-error=unused-parameter"
+build --cxxopt="-Wno-error=unused-but-set-variable"
+build --cxxopt="-Wno-unused"
+
+test --test_output=errors
+test --spawn_strategy=local
+
+try-import %workspace%/clang.bazelrc
+build:clang --action_env=LLVM_VERSION
+build:clang --host_copt="-Wno-deprecated-builtins"
