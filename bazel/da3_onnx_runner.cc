@@ -143,7 +143,13 @@ struct Da3OnnxRunner::Impl {
       }
 
       output->depth_vis = ColorizeDepth(depth_scaled);
+      output->depth_metric = depth_scaled.clone();
       output->pair_label = cv::format("(kf%d,kf%d) infer=%.1fms", a.idx, b.idx, infer_ms);
+      output->pose = b.pose;
+      output->fx = b.fx;
+      output->fy = b.fy;
+      output->cx = b.cx;
+      output->cy = b.cy;
       return !output->depth_vis.empty();
     } catch (const std::exception& e) {
       output->scale_text = std::string("scale: failed (") + e.what() + ")";
@@ -414,10 +420,95 @@ const std::string& Da3OnnxRunner::ErrorMessage() const {
 }
 
 bool Da3OnnxRunner::InferPair(const Keyframe& a, const Keyframe& b, Da3Output* output) {
-  if (!impl_) {
-    return false;
+  return impl_ && impl_->InferPair(a, b, output);
+}
+
+Da3Worker::Da3Worker(std::unique_ptr<Da3OnnxRunner> runner)
+    : runner_(std::move(runner)), worker_(&Da3Worker::ThreadMain, this) {
+  std::lock_guard<std::mutex> lock(mu_);
+  last_status_ = "DA3: waiting for first keyframe pair";
+}
+
+Da3Worker::~Da3Worker() {
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    stop_ = true;
+    jobs_.clear();
   }
-  return impl_->InferPair(a, b, output);
+  cv_.notify_all();
+  if (worker_.joinable()) {
+    worker_.join();
+  }
+}
+
+bool Da3Worker::IsReady() const { return runner_ != nullptr && runner_->IsReady(); }
+
+std::string Da3Worker::ErrorMessage() const {
+  if (!runner_) {
+    return "DA3 runner missing";
+  }
+  return runner_->ErrorMessage();
+}
+
+void Da3Worker::Submit(const Keyframe& a, const Keyframe& b) {
+  std::lock_guard<std::mutex> lock(mu_);
+  jobs_.clear();
+  jobs_.push_back({a, b});
+  last_status_ = cv::format("DA3: queued (kf%d,kf%d)", a.idx, b.idx);
+  cv_.notify_one();
+}
+
+std::optional<Da3Output> Da3Worker::GetLatestOutput() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  if (!latest_output_.has_value()) {
+    return std::nullopt;
+  }
+  Da3Output out;
+  out.scale_text = latest_output_->scale_text;
+  out.pair_label = latest_output_->pair_label;
+  out.depth_vis = latest_output_->depth_vis.clone();
+  out.depth_metric = latest_output_->depth_metric.clone();
+  out.pose = latest_output_->pose;
+  out.fx = latest_output_->fx;
+  out.fy = latest_output_->fy;
+  out.cx = latest_output_->cx;
+  out.cy = latest_output_->cy;
+  return out;
+}
+
+std::string Da3Worker::GetLatestStatus() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  return last_status_;
+}
+
+void Da3Worker::ThreadMain() {
+  while (true) {
+    Job job;
+    {
+      std::unique_lock<std::mutex> lock(mu_);
+      cv_.wait(lock, [&]() { return stop_ || !jobs_.empty(); });
+      if (stop_) {
+        return;
+      }
+      job = std::move(jobs_.front());
+      jobs_.pop_front();
+    }
+
+    Da3Output out;
+    const bool ok = runner_ && runner_->InferPair(job.a, job.b, &out);
+    std::lock_guard<std::mutex> lock(mu_);
+    if (!ok) {
+      latest_output_.reset();
+      if (!out.scale_text.empty()) {
+        last_status_ = "DA3: " + out.scale_text;
+      } else {
+        last_status_ = cv::format("DA3: infer failed (kf%d,kf%d)", job.a.idx, job.b.idx);
+      }
+      continue;
+    }
+    latest_output_ = std::move(out);
+    last_status_ = cv::format("DA3: ok (kf%d,kf%d)", job.a.idx, job.b.idx);
+  }
 }
 
 }  // namespace da3client
