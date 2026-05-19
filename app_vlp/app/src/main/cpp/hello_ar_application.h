@@ -23,9 +23,11 @@
 #include <jni.h>
 
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "arcore_c_api.h"
 #include "background_renderer.h"
@@ -36,6 +38,11 @@
 #include "point_cloud_renderer.h"
 #include "texture.h"
 #include "util.h"
+
+#ifndef HELLO_AR_ENABLE_MOBILI_VLP
+#define HELLO_AR_ENABLE_MOBILI_VLP 0
+#endif
+
 
 namespace hello_ar {
 
@@ -81,10 +88,19 @@ class HelloArApplication {
   bool IsDepthSupported();
 
   void OnSettingsChange(bool is_instant_placement_enabled);
+  void setRenderEnabled(bool enabled) { render_enabled_ = enabled; }
+  void setStreamConsumerActive(bool active) { stream_consumer_active_ = active; }
 
   int PublishImage();
   bool popDebugMessage();
   std::string getDebugMessage();
+  bool hasLatestStreamFrame() const;
+  std::vector<uint8_t> getLatestGrayImage() const;
+  std::vector<uint8_t> getLatestYuvNv21Image() const;
+  void getLatestStreamMetadata(int64_t* timestamp_ns, int* width, int* height,
+                               float* fx, float* fy, float* cx, float* cy,
+                               float* qx, float* qy, float* qz, float* qw,
+                               float* tx, float* ty, float* tz) const;
 
  private:
   glm::mat3 GetTextureTransformMatrix(const ArSession* session,
@@ -116,7 +132,9 @@ class HelloArApplication {
   ObjRenderer andy_renderer_;
 
   float world_mesh_color_[4];
+#if HELLO_AR_ENABLE_MOBILI_VLP
   ObjWareRenderer world_mesh_renderer_;
+#endif  // #if HELLO_AR_ENABLE_MOBILI_VLP
   Texture depth_texture_;
 
   int32_t plane_count_ = 0;
@@ -127,6 +145,27 @@ class HelloArApplication {
 
   bool publishing_ = false;
   ArCameraIntrinsics *camera_intrinsics_;
+
+  mutable std::mutex stream_mutex_;
+  std::vector<uint8_t> latest_gray_image_;
+  std::vector<uint8_t> latest_yuv_nv21_image_;
+  int latest_gray_width_ = 0;
+  int latest_gray_height_ = 0;
+  int64_t latest_timestamp_ns_ = 0;
+  float latest_fx_ = 0.0f;
+  float latest_fy_ = 0.0f;
+  float latest_cx_ = 0.0f;
+  float latest_cy_ = 0.0f;
+  float latest_qx_ = 0.0f;
+  float latest_qy_ = 0.0f;
+  float latest_qz_ = 0.0f;
+  float latest_qw_ = 1.0f;
+  float latest_tx_ = 0.0f;
+  float latest_ty_ = 0.0f;
+  float latest_tz_ = 0.0f;
+  bool has_latest_stream_frame_ = false;
+  bool render_enabled_ = true;
+  bool stream_consumer_active_ = false;
 };
 }  // namespace hello_ar
 

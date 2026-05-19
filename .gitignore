@@ -6,3 +6,5 @@ test
 *bash_history
 output
 data
+*__pycache__
+python/models

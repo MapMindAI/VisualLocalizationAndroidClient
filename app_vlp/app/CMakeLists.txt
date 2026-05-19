@@ -35,9 +35,13 @@ add_library(opencv SHARED IMPORTED)
 set_target_properties(opencv PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/opencv/lib/${ANDROID_ABI}/libopencv_java4.so)
 
 include_directories(${CMAKE_SOURCE_DIR}/../../libs)
-include_directories(${CMAKE_SOURCE_DIR}/../../libs/mobili_vlp_api/include)
-add_library(mobili_vlp_api SHARED IMPORTED)
-set_target_properties(mobili_vlp_api PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mobili_vlp_api/lib/${ANDROID_ABI}/libmobili_vlp_api.so)
+
+option(ENABLE_MOBILI_VLP "Enable linking and usage of mobili::vlp library" OFF)
+if(ENABLE_MOBILI_VLP)
+  include_directories(${CMAKE_SOURCE_DIR}/../../libs/mobili_vlp_api/include)
+  add_library(mobili_vlp_api SHARED IMPORTED)
+  set_target_properties(mobili_vlp_api PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mobili_vlp_api/lib/${ANDROID_ABI}/libmobili_vlp_api.so)
+endif()
 
 
 # This is the main app library.
@@ -54,11 +58,16 @@ add_library(hello_ar_native SHARED
 
 target_include_directories(hello_ar_native PRIVATE
                            src/main/cpp)
+target_compile_definitions(hello_ar_native PRIVATE
+                           HELLO_AR_ENABLE_MOBILI_VLP=$<BOOL:${ENABLE_MOBILI_VLP}>)
 target_link_libraries(hello_ar_native
                       android
                       log
                       GLESv2
                       glm
                       arcore
-                      opencv
-                      mobili_vlp_api)
+                      opencv)
+
+if(ENABLE_MOBILI_VLP)
+  target_link_libraries(hello_ar_native mobili_vlp_api)
+endif()
