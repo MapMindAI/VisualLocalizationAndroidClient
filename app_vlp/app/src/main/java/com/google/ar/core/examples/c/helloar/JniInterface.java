@@ -47,6 +47,7 @@ public class JniInterface {
   public static native int onSendImage(long nativeApplication);
   public static native boolean popDebugMessage(long nativeApplication);
   public static native String getDebugMessage(long nativeApplication);
+  public static native String runDa3MnnOnce(long nativeApplication);
 
   public static native int onStartRec(String record_name);
   public static native void onStopRec();

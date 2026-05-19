@@ -31,6 +31,7 @@
 
 #include "arcore_c_api.h"
 #include "background_renderer.h"
+#include "da3_mnn_runner.h"
 #include "glm.h"
 #include "obj_renderer.h"
 #include "obj_ware_renderer.h"
@@ -41,6 +42,10 @@
 
 #ifndef HELLO_AR_ENABLE_MOBILI_VLP
 #define HELLO_AR_ENABLE_MOBILI_VLP 0
+#endif
+
+#ifndef HELLO_AR_ENABLE_MNN_DA3
+#define HELLO_AR_ENABLE_MNN_DA3 0
 #endif
 
 
@@ -94,6 +99,7 @@ class HelloArApplication {
   int PublishImage();
   bool popDebugMessage();
   std::string getDebugMessage();
+  std::string runDa3MnnOnce();
   bool hasLatestStreamFrame() const;
   std::vector<uint8_t> getLatestGrayImage() const;
   std::vector<uint8_t> getLatestYuvNv21Image() const;
@@ -166,6 +172,11 @@ class HelloArApplication {
   bool has_latest_stream_frame_ = false;
   bool render_enabled_ = true;
   bool stream_consumer_active_ = false;
+  std::vector<uint8_t> da3_prev_gray_image_;
+  int da3_prev_width_ = 0;
+  int da3_prev_height_ = 0;
+  bool da3_has_prev_frame_ = false;
+  std::unique_ptr<Da3MnnRunner> da3_mnn_runner_;
 };
 }  // namespace hello_ar
 

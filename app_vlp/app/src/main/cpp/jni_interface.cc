@@ -118,6 +118,12 @@ JNI_METHOD(jstring, getDebugMessage)
   return env->NewStringUTF(cppStr.c_str());
 }
 
+JNI_METHOD(jstring, runDa3MnnOnce)
+(JNIEnv* env, jclass, jlong native_application) {
+  std::string cppStr = native(native_application)->runDa3MnnOnce();
+  return env->NewStringUTF(cppStr.c_str());
+}
+
 JNI_METHOD(int, onStartRec)
 (JNIEnv* env, jclass, jstring record_folder) {
   // Convert jstring (Java) to std::string (C++)

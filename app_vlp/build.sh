@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-./gradlew assembleDebug
+./gradlew assembleDebug -PenableMnnDa3=true
 
 APP_PATH=$(find app/build/outputs/apk/debug/ -type f -name "*.apk")
 echo ${APP_PATH}

@@ -21,6 +21,7 @@ extracted before building to a temporary directory.
  */
 def arcore_libpath = "${buildDir}/arcore-native"
 def enableMobiliVlp = project.findProperty("enableMobiliVlp")?.toString()?.toBoolean() ?: false
+def enableMnnDa3 = project.findProperty("enableMnnDa3")?.toString()?.toBoolean() ?: false
 
 // Create a configuration to mark which aars to extract .so files from
 configurations { natives }
@@ -45,7 +46,8 @@ android {
                         "-DARCORE_LIBPATH=${arcore_libpath}/jni",
                         "-DARCORE_INCLUDE=${project.rootDir}/libraries/include",
                         "-DGLM_INCLUDE=${project.rootDir}/third_party/glm",
-                        "-DENABLE_MOBILI_VLP=${enableMobiliVlp ? 'ON' : 'OFF'}"
+                        "-DENABLE_MOBILI_VLP=${enableMobiliVlp ? 'ON' : 'OFF'}",
+                        "-DENABLE_MNN_DA3=${enableMnnDa3 ? 'ON' : 'OFF'}"
             }
         }
         ndk {
@@ -66,6 +68,16 @@ android {
     externalNativeBuild {
         cmake {
             path "CMakeLists.txt"
+        }
+    }
+    sourceSets {
+        main {
+            jniLibs.srcDirs += ["../../libs/mnn/lib"]
+        }
+    }
+    packagingOptions {
+        jniLibs {
+            pickFirsts += ["**/libc++_shared.so"]
         }
     }
 }

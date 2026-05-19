@@ -20,7 +20,9 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
+#include <sstream>
 
 #include "arcore_c_api.h"
 #include "plane_renderer.h"
@@ -73,6 +75,12 @@ HelloArApplication::HelloArApplication(AAssetManager* asset_manager)
   }
 #else
   LOGI("mobili::vlp disabled (HELLO_AR_ENABLE_MOBILI_VLP=0)");
+#endif
+
+#if HELLO_AR_ENABLE_MNN_DA3
+  LOGI("DA3 MNN runner enabled (lazy init on first run).");
+#else
+  LOGI("DA3 MNN runner disabled (HELLO_AR_ENABLE_MNN_DA3=0)");
 #endif
 }
 
@@ -256,6 +264,83 @@ std::string HelloArApplication::getDebugMessage() {
 #endif
 }
 
+std::string HelloArApplication::runDa3MnnOnce() {
+#if !HELLO_AR_ENABLE_MNN_DA3
+  return "DA3 MNN disabled at build-time. Rebuild with -PenableMnnDa3=true.";
+#else
+  if (!da3_mnn_runner_) {
+    const auto init_t0 = std::chrono::steady_clock::now();
+    da3_mnn_runner_.reset(new Da3MnnRunner(asset_manager_));
+    const auto init_t1 = std::chrono::steady_clock::now();
+    const double init_ms =
+        std::chrono::duration<double, std::milli>(init_t1 - init_t0).count();
+    if (!da3_mnn_runner_->IsReady()) {
+      std::ostringstream init_oss;
+      init_oss << "DA3 MNN init failed (" << init_ms << "ms)";
+      return init_oss.str();
+    }
+    LOGI("DA3 MNN runner initialized in %.2f ms", init_ms);
+  }
+  if (!da3_mnn_runner_->IsReady()) {
+    return "DA3 MNN runner not ready";
+  }
+
+  std::vector<uint8_t> curr_gray;
+  std::vector<uint8_t> prev_gray;
+  int width = 0;
+  int height = 0;
+  {
+    std::lock_guard<std::mutex> lock(stream_mutex_);
+    width = latest_gray_width_;
+    height = latest_gray_height_;
+    curr_gray = latest_gray_image_;
+    if (da3_has_prev_frame_) {
+      prev_gray = da3_prev_gray_image_;
+    }
+  }
+
+  if (curr_gray.empty() || width <= 0 || height <= 0) {
+    return "No gray frame available yet. Wait a moment and try again.";
+  }
+
+  if (!da3_has_prev_frame_ || prev_gray.empty() || da3_prev_width_ != width ||
+      da3_prev_height_ != height) {
+    {
+      std::lock_guard<std::mutex> lock(stream_mutex_);
+      da3_prev_gray_image_ = curr_gray;
+      da3_prev_width_ = width;
+      da3_prev_height_ = height;
+      da3_has_prev_frame_ = true;
+    }
+    std::ostringstream oss;
+    oss << "Cached first frame (" << width << "x" << height
+        << "). Tap again to run pair inference.";
+    return oss.str();
+  }
+
+  std::string result_msg;
+  const auto t0 = std::chrono::steady_clock::now();
+  const bool ok =
+      da3_mnn_runner_->RunPair(prev_gray, curr_gray, width, height, &result_msg);
+  const auto t1 = std::chrono::steady_clock::now();
+  const double elapsed_ms =
+      std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+  {
+    std::lock_guard<std::mutex> lock(stream_mutex_);
+    da3_prev_gray_image_ = curr_gray;
+    da3_prev_width_ = width;
+    da3_prev_height_ = height;
+    da3_has_prev_frame_ = true;
+  }
+
+  std::ostringstream oss;
+  oss << (ok ? "[DA3 MNN] OK " : "[DA3 MNN] FAIL ") << "elapsed="
+      << elapsed_ms << "ms " << result_msg;
+  return oss.str();
+#endif
+}
+
 bool HelloArApplication::hasLatestStreamFrame() const {
   std::lock_guard<std::mutex> lock(stream_mutex_);
   return has_latest_stream_frame_;
@@ -387,6 +472,9 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
   }
 
   bool need_stream_image = stream_consumer_active_;
+#if HELLO_AR_ENABLE_MNN_DA3
+  need_stream_image = need_stream_image || (da3_mnn_runner_ != nullptr);
+#endif
   bool need_record_image = false;
 #if HELLO_AR_ENABLE_MOBILI_VLP
   need_record_image = mobili::vlp::Recording();

@@ -278,6 +278,27 @@ public class HelloArActivity extends AppCompatActivity
       }
     });
 
+    Button runDa3MnnButton = findViewById(R.id.run_da3_mnn_button);
+    runDa3MnnButton.setOnClickListener(
+        new View.OnClickListener() {
+          @Override
+          public void onClick(View v) {
+            runDa3MnnButton.setEnabled(false);
+            msgView.setText("Running DA3 MNN...");
+            new Thread(
+                    () -> {
+                      final String result = JniInterface.runDa3MnnOnce(nativeApplication);
+                      runOnUiThread(
+                          () -> {
+                            msgView.setText(result);
+                            displayInSnackbar(result);
+                            runDa3MnnButton.setEnabled(true);
+                          });
+                    })
+                .start();
+          }
+        });
+
     ImageButton settingsButton = findViewById(R.id.settings_button);
     settingsButton.setOnClickListener(
         new View.OnClickListener() {

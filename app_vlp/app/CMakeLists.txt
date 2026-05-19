@@ -43,10 +43,18 @@ if(ENABLE_MOBILI_VLP)
   set_target_properties(mobili_vlp_api PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mobili_vlp_api/lib/${ANDROID_ABI}/libmobili_vlp_api.so)
 endif()
 
+option(ENABLE_MNN_DA3 "Enable MNN DA3 model inference on device" OFF)
+if(ENABLE_MNN_DA3)
+  include_directories(${CMAKE_SOURCE_DIR}/../../libs/mnn/include)
+  add_library(mnn SHARED IMPORTED)
+  set_target_properties(mnn PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mnn/lib/${ANDROID_ABI}/libMNN.so)
+endif()
+
 
 # This is the main app library.
 add_library(hello_ar_native SHARED
            src/main/cpp/background_renderer.cc
+           src/main/cpp/da3_mnn_runner.cc
            src/main/cpp/hello_ar_application.cc
            src/main/cpp/jni_interface.cc
            src/main/cpp/obj_renderer.cc
@@ -59,7 +67,8 @@ add_library(hello_ar_native SHARED
 target_include_directories(hello_ar_native PRIVATE
                            src/main/cpp)
 target_compile_definitions(hello_ar_native PRIVATE
-                           HELLO_AR_ENABLE_MOBILI_VLP=$<BOOL:${ENABLE_MOBILI_VLP}>)
+                           HELLO_AR_ENABLE_MOBILI_VLP=$<BOOL:${ENABLE_MOBILI_VLP}>
+                           HELLO_AR_ENABLE_MNN_DA3=$<BOOL:${ENABLE_MNN_DA3}>)
 target_link_libraries(hello_ar_native
                       android
                       log
@@ -70,4 +79,8 @@ target_link_libraries(hello_ar_native
 
 if(ENABLE_MOBILI_VLP)
   target_link_libraries(hello_ar_native mobili_vlp_api)
+endif()
+
+if(ENABLE_MNN_DA3)
+  target_link_libraries(hello_ar_native mnn)
 endif()

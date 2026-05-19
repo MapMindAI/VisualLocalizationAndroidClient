@@ -86,6 +86,16 @@
           android:layout_weight="1"
           android:text="Disable Render"
           android:textAllCaps="false" />
+      <View
+          android:layout_width="5dp"
+          android:layout_height="0dp" />
+      <Button
+          android:id="@+id/run_da3_mnn_button"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="Run DA3 MNN"
+          android:textAllCaps="false" />
   </LinearLayout>
 
 
