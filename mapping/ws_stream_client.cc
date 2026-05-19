@@ -44,7 +44,7 @@ DEFINE_int32(window_height, 480, "Display window height.");
 DEFINE_string(da3_model, "python/models/da3_small_2_364x280_sim.onnx", "Path to DA3 ONNX model.");
 DEFINE_int32(da3_width, 364, "DA3 model input width.");
 DEFINE_int32(da3_height, 280, "DA3 model input height.");
-DEFINE_double(keyframe_rot_deg, 6.0, "Keyframe threshold: rotation delta in degrees.");
+DEFINE_double(keyframe_rot_deg, 12.0, "Keyframe threshold: rotation delta in degrees.");
 DEFINE_double(keyframe_trans_m, 0.12, "Keyframe threshold: translation delta in meters.");
 DEFINE_bool(enable_websocket, true, "Enable websocket stream server.");
 DEFINE_int32(websocket_port, 9002, "Websocket server port.");
@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
   std::string latest_da3_status =
       da3_worker ? "DA3: waiting for first keyframe pair" : "DA3: disabled";
   std::deque<std::array<float, 3>> trajectory;
-  std::deque<std::pair<std::string, std::vector<std::array<float, 3>>>> recent_clouds;
+  std::deque<std::pair<std::string, std::vector<std::array<float, 6>>>> recent_clouds;
   std::string last_cloud_pair;
   auto last_web_send = std::chrono::steady_clock::now();
 
@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
     }
 
     cv::Mat combined;
-    cv::hconcat(overlay, depth_panel, combined);
+    cv::vconcat(overlay, depth_panel, combined);
     cv::imshow(window_name, combined);
 
     trajectory.push_back(
@@ -226,10 +226,14 @@ int main(int argc, char** argv) {
       auto out = da3_worker->GetLatestOutput();
       if (out.has_value() && !out->depth_metric.empty() && out->pair_label != last_cloud_pair) {
         const int step = std::max(1, FLAGS_web_depth_step);
+        const cv::Mat* color_ref = &out->reference_image_bgr;
+        if (color_ref->empty()) {
+          color_ref = &image_bgr;
+        }
         const Sophus::SE3d T_w_c = vlputil::PoseToSE3d(out->pose);
         const Eigen::Matrix3d R = T_w_c.so3().matrix();
         const Eigen::Vector3d t = T_w_c.translation();
-        std::vector<std::array<float, 3>> cloud;
+        std::vector<std::array<float, 6>> cloud;
         cloud.reserve(static_cast<size_t>(out->depth_metric.rows / step) *
                       static_cast<size_t>(out->depth_metric.cols / step));
         for (int v = 0; v < out->depth_metric.rows; v += step) {
@@ -248,12 +252,18 @@ int main(int argc, char** argv) {
             const float wx = static_cast<float>(pw.x());
             const float wy = static_cast<float>(pw.y());
             const float wz = static_cast<float>(pw.z());
-            cloud.push_back({wx, wy, wz});
+            const int cvv = std::min(v, color_ref->rows - 1);
+            const int cuu = std::min(u, color_ref->cols - 1);
+            const cv::Vec3b bgr = color_ref->at<cv::Vec3b>(cvv, cuu);
+            const float r = static_cast<float>(bgr[2]) / 255.0f;
+            const float g = static_cast<float>(bgr[1]) / 255.0f;
+            const float bcol = static_cast<float>(bgr[0]) / 255.0f;
+            cloud.push_back({wx, wy, wz, r, g, bcol});
           }
         }
         if (static_cast<int>(cloud.size()) > FLAGS_web_max_cloud_points) {
           const size_t stride = static_cast<size_t>(cloud.size() / FLAGS_web_max_cloud_points + 1);
-          std::vector<std::array<float, 3>> sampled;
+          std::vector<std::array<float, 6>> sampled;
           sampled.reserve(FLAGS_web_max_cloud_points);
           for (size_t i = 0; i < cloud.size(); i += stride) {
             sampled.push_back(cloud[i]);
@@ -309,7 +319,8 @@ int main(int argc, char** argv) {
         const auto& pts = recent_clouds[i].second;
         for (size_t j = 0; j < pts.size(); ++j) {
           if (j) oss << ",";
-          oss << "[" << pts[j][0] << "," << pts[j][1] << "," << pts[j][2] << "]";
+          oss << "[" << pts[j][0] << "," << pts[j][1] << "," << pts[j][2] << ","
+              << pts[j][3] << "," << pts[j][4] << "," << pts[j][5] << "]";
         }
         oss << "]}";
       }

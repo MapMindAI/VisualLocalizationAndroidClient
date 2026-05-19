@@ -69,7 +69,7 @@ std::vector<float> PoseToRt3x4RowMajor(const Pose& pose) {
   const Eigen::Matrix3f R = pose.so3().matrix();
   const Eigen::Vector3f t = pose.translation();
   std::vector<float> rt(12, 0.0f);
-  // Fill as column-major for [R|t;0 0 0 1].
+  // Fill as row-major 3x4 matrix [R|t].
   rt[0] = R(0, 0);
   rt[1] = R(0, 1);
   rt[2] = R(0, 2);
@@ -105,7 +105,7 @@ std::vector<float> BuildPairIntrinsics(const Keyframe& a, const Keyframe& b) {
 
 std::vector<float> BuildPairExtrinsics3x4(const Keyframe& a, const Keyframe& b) {
   mapping::Pose pose_a = mapping::Pose(Eigen::Quaternionf::Identity(), Eigen::Vector3f::Zero());
-  mapping::Pose pose_b = b.pose * a.pose.inverse();
+  mapping::Pose pose_b = a.pose.inverse() * b.pose;
 
   std::vector<float> out = PoseToRt3x4RowMajor(pose_a);
   std::vector<float> b_rt = PoseToRt3x4RowMajor(pose_b);
@@ -195,9 +195,10 @@ struct Da3OnnxRunner::Impl {
         output->scale_text = "scale: failed (invalid depth tensor)";
         return false;
       }
-      cv::resize(depth_rel, depth_rel, a.image_bgr.size(), 0.0, 0.0, cv::INTER_LINEAR);
+      cv::resize(depth_rel, depth_rel, a.image_bgr.size(), 0.0, 0.0, cv::INTER_NEAREST);
 
       output->scale_text = "scale: disabled";
+      output->reference_image_bgr = b.image_bgr.clone();
       output->depth_vis = ColorizeDepth(depth_rel);
       output->depth_metric = depth_rel.clone();
       output->pair_label = cv::format("(kf%d,kf%d) infer=%.1fms", a.idx, b.idx, infer_ms);
@@ -477,6 +478,7 @@ std::optional<Da3Output> Da3Worker::GetLatestOutput() const {
   Da3Output out;
   out.scale_text = latest_output_->scale_text;
   out.pair_label = latest_output_->pair_label;
+  out.reference_image_bgr = latest_output_->reference_image_bgr.clone();
   out.depth_vis = latest_output_->depth_vis.clone();
   out.depth_metric = latest_output_->depth_metric.clone();
   out.pose = latest_output_->pose;

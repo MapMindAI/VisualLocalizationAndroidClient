@@ -5,7 +5,7 @@
   <title>VLP C++ Web Visualizer</title>
   <style>
     html,body{margin:0;height:100%;background:#101216;color:#e6e6e6;font-family:sans-serif}
-    #root{display:grid;grid-template-columns:40% 60%;height:100%}
+    #root{display:grid;grid-template-columns:25% 75%;height:100%}
     #left{padding:8px;box-sizing:border-box}
     #img{width:100%;border:1px solid #333}
     #meta{margin-top:8px;font-size:14px;line-height:1.4}
@@ -87,9 +87,15 @@
       for(const c of clouds){
         const pts=c.points||[]; if(!pts.length) continue;
         const arr=new Float32Array(pts.length*3);
-        for(let i=0;i<pts.length;i++){arr[3*i]=pts[i][0];arr[3*i+1]=pts[i][1];arr[3*i+2]=pts[i][2];}
-        const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(arr,3));
-        cloudGroup.add(new THREE.Points(g,new THREE.PointsMaterial({size:0.01,color:0x4dbbff})));
+        const col=new Float32Array(pts.length*3);
+        for(let i=0;i<pts.length;i++){
+          arr[3*i]=pts[i][0];arr[3*i+1]=pts[i][1];arr[3*i+2]=pts[i][2];
+          col[3*i]=pts[i][3]??0.302;col[3*i+1]=pts[i][4]??0.733;col[3*i+2]=pts[i][5]??1.0;
+        }
+        const g=new THREE.BufferGeometry();
+        g.setAttribute('position',new THREE.BufferAttribute(arr,3));
+        g.setAttribute('color',new THREE.BufferAttribute(col,3));
+        cloudGroup.add(new THREE.Points(g,new THREE.PointsMaterial({size:0.01,vertexColors:true})));
       }
     }
 

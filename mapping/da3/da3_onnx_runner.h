@@ -28,6 +28,7 @@ struct Keyframe {
 };
 
 struct Da3Output {
+  cv::Mat reference_image_bgr;
   cv::Mat depth_vis;
   cv::Mat depth_metric;
   std::string scale_text = "scale: n/a (pose-translation)";
