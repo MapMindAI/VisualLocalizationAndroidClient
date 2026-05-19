@@ -3,8 +3,8 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "opencv",
     srcs = select({
-        "@dm_bazel_platforms//:android_arm64": ["lib/opencv_android/arm64-v8a/libopencv_java4.so"],
-        "@dm_bazel_platforms//:android_armv7a": ["lib/opencv_android/armeabi-v7a/libopencv_java4.so"],
+        "@bazel_platforms//:android_arm64": ["lib/opencv_android/arm64-v8a/libopencv_java4.so"],
+        "@bazel_platforms//:android_armv7a": ["lib/opencv_android/armeabi-v7a/libopencv_java4.so"],
         "//conditions:default": glob(["lib/libopencv_*.so*"]),
     }),
     hdrs = glob(["include/opencv4/opencv2/**/*"]),

@@ -13,7 +13,7 @@ def visual_localization_client_deps():
 
     maybe(
         native.new_local_repository,
-        name = "dm_bazel_platforms",
+        name = "bazel_platforms",
         build_file = "@mm_visual_localization_client//bazel/platforms:BUILD",
         path = ".",
     )
