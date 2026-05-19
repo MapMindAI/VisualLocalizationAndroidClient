@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstdint>
 #include <deque>
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -36,6 +37,29 @@ namespace {
 constexpr char kStreamMethod[] = "/vlp.FrameStreamService/StreamFrames";
 
 using Keyframe = da3client::Keyframe;
+
+double ComputeDepthConsistencyScale(const cv::Mat& ref_depth, const cv::Mat& cur_depth, int step) {
+  if (ref_depth.empty() || cur_depth.empty() || ref_depth.size() != cur_depth.size() ||
+      ref_depth.type() != CV_32F || cur_depth.type() != CV_32F) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  std::vector<float> ratios;
+  ratios.reserve(static_cast<size_t>(ref_depth.rows / step) * static_cast<size_t>(ref_depth.cols / step));
+  for (int v = 0; v < ref_depth.rows; v += step) {
+    const float* rrow = ref_depth.ptr<float>(v);
+    const float* crow = cur_depth.ptr<float>(v);
+    for (int u = 0; u < ref_depth.cols; u += step) {
+      const float a = rrow[u];
+      const float b = crow[u];
+      if (!std::isfinite(a) || !std::isfinite(b) || a <= 1e-4f || b <= 1e-4f) continue;
+      ratios.push_back(a / b);
+    }
+  }
+  if (ratios.size() < 100) return std::numeric_limits<double>::quiet_NaN();
+  const size_t mid = ratios.size() / 2;
+  std::nth_element(ratios.begin(), ratios.begin() + mid, ratios.end());
+  return static_cast<double>(ratios[mid]);
+}
 
 DEFINE_string(host, "127.0.0.1", "gRPC server host.");
 DEFINE_int32(port, 50051, "gRPC server port.");
@@ -97,9 +121,9 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::string window_name = "VLP gRPC Stream";
-  cv::namedWindow(window_name, cv::WINDOW_NORMAL);
-  cv::resizeWindow(window_name, FLAGS_window_width, FLAGS_window_height);
+  // const std::string window_name = "VLP gRPC Stream";
+  // cv::namedWindow(window_name, cv::WINDOW_NORMAL);
+  // cv::resizeWindow(window_name, FLAGS_window_width, FLAGS_window_height);
   if (FLAGS_enable_websocket) {
     web_server = std::make_unique<vlpweb::SimpleWebsocketServer>(FLAGS_websocket_port,
                                                                   FLAGS_web_client_html);
@@ -120,6 +144,7 @@ int main(int argc, char** argv) {
   std::string latest_pair_label;
   std::string latest_da3_status =
       da3_worker ? "DA3: waiting for first keyframe pair" : "DA3: disabled";
+  std::optional<da3client::Da3Output> prev_pair;
   std::deque<std::array<float, 3>> trajectory;
   std::deque<std::pair<std::string, std::vector<std::array<float, 6>>>> recent_clouds;
   std::string last_cloud_pair;
@@ -180,9 +205,31 @@ int main(int argc, char** argv) {
     if (da3_worker) {
       auto out = da3_worker->GetLatestOutput();
       if (out.has_value()) {
+        if (prev_pair.has_value() && prev_pair->kf_b_idx == out->kf_a_idx &&
+            !prev_pair->depth_b_metric.empty() && !out->depth_a_metric.empty()) {
+          const double s = ComputeDepthConsistencyScale(prev_pair->depth_b_metric, out->depth_a_metric, 16);
+          if (std::isfinite(s) && s > 1e-4 && s < 1e4) {
+            out->depth_metric = out->depth_b_metric * static_cast<float>(s);
+            out->depth_vis = cv::Mat();
+            out->scale_text = cv::format("scale=%.6f (depth kf%d)", s, out->kf_a_idx);
+            LOG(INFO) << out->scale_text;
+          } else {
+            out->depth_metric = out->depth_b_metric.clone();
+            out->scale_text = "scale: failed (depth-consistency)";
+          }
+        } else {
+          out->depth_metric = out->depth_b_metric.clone();
+          out->scale_text = "scale: warmup";
+        }
+        if (out->depth_vis.empty()) {
+          cv::Mat tmp_u8;
+          cv::normalize(out->depth_metric, tmp_u8, 0, 255, cv::NORM_MINMAX, CV_8U);
+          cv::applyColorMap(tmp_u8, out->depth_vis, cv::COLORMAP_INFERNO);
+        }
         latest_depth_vis = out->depth_vis;
         latest_scale_text = out->scale_text;
         latest_pair_label = out->pair_label;
+        prev_pair = *out;
       }
       latest_da3_status = da3_worker->GetLatestStatus();
     }
@@ -215,7 +262,7 @@ int main(int argc, char** argv) {
 
     cv::Mat combined;
     cv::vconcat(overlay, depth_panel, combined);
-    cv::imshow(window_name, combined);
+    // cv::imshow(window_name, combined);
 
     trajectory.push_back(
         {packet.pose.translation().x(), packet.pose.translation().y(), packet.pose.translation().z()});
@@ -329,12 +376,12 @@ int main(int argc, char** argv) {
     }
 skip_web_send:;
 
-    const int key = cv::waitKey(1) & 0xFF;
-    if (key == 'q') {
-      LOG(INFO) << "Quit requested by user.";
-      user_quit = true;
-      break;
-    }
+    // const int key = cv::waitKey(1) & 0xFF;
+    // if (key == 'q') {
+    //   LOG(INFO) << "Quit requested by user.";
+    //   user_quit = true;
+    //   break;
+    // }
 
     if (frame_count - last_log_count >= 30) {
       last_log_count = frame_count;
@@ -353,7 +400,7 @@ skip_web_send:;
                << status.error_message();
   }
 
-  cv::destroyAllWindows();
+  // cv::destroyAllWindows();
   if (web_server) {
     web_server->Stop();
   }

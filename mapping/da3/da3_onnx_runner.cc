@@ -105,7 +105,7 @@ std::vector<float> BuildPairIntrinsics(const Keyframe& a, const Keyframe& b) {
 
 std::vector<float> BuildPairExtrinsics3x4(const Keyframe& a, const Keyframe& b) {
   mapping::Pose pose_a = mapping::Pose(Eigen::Quaternionf::Identity(), Eigen::Vector3f::Zero());
-  mapping::Pose pose_b = a.pose.inverse() * b.pose;
+  mapping::Pose pose_b = b.pose.inverse() * a.pose;
 
   std::vector<float> out = PoseToRt3x4RowMajor(pose_a);
   std::vector<float> b_rt = PoseToRt3x4RowMajor(pose_b);
@@ -138,6 +138,13 @@ std::vector<float> BuildImagePairNchw(const std::vector<float>& a_nchw,
   input.insert(input.end(), a_nchw.begin(), a_nchw.end());
   input.insert(input.end(), b_nchw.begin(), b_nchw.end());
   return input;
+}
+
+std::string PoseSummary(const Pose& p) {
+  const Eigen::Quaternionf q = p.unit_quaternion();
+  const Eigen::Vector3f t = p.translation();
+  return cv::format("q=(%.6f,%.6f,%.6f,%.6f) t=(%.6f,%.6f,%.6f) |t|=%.6f",
+                    q.x(), q.y(), q.z(), q.w(), t.x(), t.y(), t.z(), t.norm());
 }
 
 }  // namespace
@@ -190,17 +197,40 @@ struct Da3OnnxRunner::Impl {
         return false;
       }
 
-      cv::Mat depth_rel;
-      if (!ExtractDepth(outputs[out_idx["depth"]], &depth_rel)) {
+      // Debug: input delta pose sent to DA3 (relative from frame a to b).
+      const Pose input_delta = a.pose.inverse() * b.pose;
+      LOG(INFO) << "[DA3] delta_input " << PoseSummary(input_delta);
+
+      // Debug: model delta pose from extrinsics output (when available).
+      std::optional<Pose> out_delta;
+      if (out_idx.find("extrinsics") != out_idx.end()) {
+        out_delta = ExtractDeltaPoseFromExtrinsics(outputs[out_idx["extrinsics"]]);
+        if (out_delta.has_value()) {
+          LOG(INFO) << "[DA3] delta_output " << PoseSummary(*out_delta);
+        } else {
+          LOG(INFO) << "[DA3] delta_output unavailable (could not parse extrinsics output)";
+        }
+      } else {
+        LOG(INFO) << "[DA3] delta_output unavailable (no extrinsics output)";
+      }
+
+      cv::Mat depth_a;
+      cv::Mat depth_b;
+      if (!ExtractDepthPair(outputs[out_idx["depth"]], &depth_a, &depth_b)) {
         output->scale_text = "scale: failed (invalid depth tensor)";
         return false;
       }
-      cv::resize(depth_rel, depth_rel, a.image_bgr.size(), 0.0, 0.0, cv::INTER_NEAREST);
+      cv::resize(depth_a, depth_a, a.image_bgr.size(), 0.0, 0.0, cv::INTER_NEAREST);
+      cv::resize(depth_b, depth_b, b.image_bgr.size(), 0.0, 0.0, cv::INTER_NEAREST);
 
-      output->scale_text = "scale: disabled";
+      output->scale_text = "scale: by-depth-consistency";
+      output->kf_a_idx = a.idx;
+      output->kf_b_idx = b.idx;
       output->reference_image_bgr = b.image_bgr.clone();
-      output->depth_vis = ColorizeDepth(depth_rel);
-      output->depth_metric = depth_rel.clone();
+      output->depth_a_metric = depth_a.clone();
+      output->depth_b_metric = depth_b.clone();
+      output->depth_vis = ColorizeDepth(depth_b);
+      output->depth_metric = depth_b.clone();
       output->pair_label = cv::format("(kf%d,kf%d) infer=%.1fms", a.idx, b.idx, infer_ms);
       output->pose = b.pose;
       output->fx = b.fx;
@@ -360,8 +390,8 @@ struct Da3OnnxRunner::Impl {
                                            dims.size());
   }
 
-  bool ExtractDepth(const Ort::Value& value, cv::Mat* depth_out) const {
-    if (!value.IsTensor() || depth_out == nullptr) {
+  bool ExtractDepthPair(const Ort::Value& value, cv::Mat* depth_a, cv::Mat* depth_b) const {
+    if (!value.IsTensor() || depth_a == nullptr || depth_b == nullptr) {
       return false;
     }
     auto info = value.GetTensorTypeAndShapeInfo();
@@ -372,11 +402,15 @@ struct Da3OnnxRunner::Impl {
       const int h = static_cast<int>(shape[2]);
       const int w = static_cast<int>(shape[3]);
       const int c = static_cast<int>(shape[1]);
-      const int channel_idx = std::max(0, std::min(c - 1, 1));
-      const size_t offset = static_cast<size_t>(channel_idx) * h * w;
-      cv::Mat depth(h, w, CV_32F);
-      std::memcpy(depth.data, data + offset, static_cast<size_t>(h) * w * sizeof(float));
-      *depth_out = depth;
+      const size_t plane = static_cast<size_t>(h) * w;
+      const size_t a_off = 0;
+      const size_t b_off = (c >= 2) ? plane : 0;
+      cv::Mat a(h, w, CV_32F);
+      cv::Mat b(h, w, CV_32F);
+      std::memcpy(a.data, data + a_off, plane * sizeof(float));
+      std::memcpy(b.data, data + b_off, plane * sizeof(float));
+      *depth_a = a;
+      *depth_b = b;
       return true;
     }
 
@@ -385,7 +419,8 @@ struct Da3OnnxRunner::Impl {
       const int w = static_cast<int>(shape[2]);
       cv::Mat depth(h, w, CV_32F);
       std::memcpy(depth.data, data, static_cast<size_t>(h) * w * sizeof(float));
-      *depth_out = depth;
+      *depth_a = depth;
+      *depth_b = depth;
       return true;
     }
 
@@ -394,11 +429,59 @@ struct Da3OnnxRunner::Impl {
       const int w = static_cast<int>(shape[1]);
       cv::Mat depth(h, w, CV_32F);
       std::memcpy(depth.data, data, static_cast<size_t>(h) * w * sizeof(float));
-      *depth_out = depth;
+      *depth_a = depth;
+      *depth_b = depth;
       return true;
     }
 
     return false;
+  }
+
+  std::optional<Pose> ExtractDeltaPoseFromExtrinsics(const Ort::Value& value) const {
+    if (!value.IsTensor()) {
+      return std::nullopt;
+    }
+    auto info = value.GetTensorTypeAndShapeInfo();
+    const std::vector<int64_t> shape = info.GetShape();
+    const float* ex = value.GetTensorData<float>();
+
+    auto make_pose_3x4 = [](const float* p) -> Pose {
+      Eigen::Matrix3f R;
+      R << p[0], p[1], p[2],
+           p[4], p[5], p[6],
+           p[8], p[9], p[10];
+      Eigen::Vector3f t(p[3], p[7], p[11]);
+      Eigen::Quaternionf q(R);
+      q.normalize();
+      return Pose(q, t);
+    };
+
+    auto make_pose_4x4 = [](const float* p) -> Pose {
+      Eigen::Matrix3f R;
+      R << p[0], p[1], p[2],
+           p[4], p[5], p[6],
+           p[8], p[9], p[10];
+      Eigen::Vector3f t(p[3], p[7], p[11]);
+      Eigen::Quaternionf q(R);
+      q.normalize();
+      return Pose(q, t);
+    };
+
+    if (shape.size() == 4 && shape[0] >= 1 && shape[1] >= 2 && shape[2] == 3 && shape[3] == 4) {
+      const float* p0 = ex;
+      const float* p1 = ex + 12;
+      const Pose a_w = make_pose_3x4(p0);
+      const Pose b_w = make_pose_3x4(p1);
+      return a_w * b_w.inverse();
+    }
+    if (shape.size() == 4 && shape[0] >= 1 && shape[1] >= 2 && shape[2] == 4 && shape[3] == 4) {
+      const float* p0 = ex;
+      const float* p1 = ex + 16;
+      const Pose a_w = make_pose_4x4(p0);
+      const Pose b_w = make_pose_4x4(p1);
+      return a_w * b_w.inverse();
+    }
+    return std::nullopt;
   }
 
   Ort::Env env;
@@ -478,7 +561,11 @@ std::optional<Da3Output> Da3Worker::GetLatestOutput() const {
   Da3Output out;
   out.scale_text = latest_output_->scale_text;
   out.pair_label = latest_output_->pair_label;
+  out.kf_a_idx = latest_output_->kf_a_idx;
+  out.kf_b_idx = latest_output_->kf_b_idx;
   out.reference_image_bgr = latest_output_->reference_image_bgr.clone();
+  out.depth_a_metric = latest_output_->depth_a_metric.clone();
+  out.depth_b_metric = latest_output_->depth_b_metric.clone();
   out.depth_vis = latest_output_->depth_vis.clone();
   out.depth_metric = latest_output_->depth_metric.clone();
   out.pose = latest_output_->pose;
