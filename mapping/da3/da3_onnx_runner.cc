@@ -20,14 +20,6 @@
 namespace da3client {
 namespace {
 
-double TransDelta(const Pose& a, const Pose& b) {
-  const Eigen::Vector3f dt = b.translation() - a.translation();
-  const double dx = static_cast<double>(dt.x());
-  const double dy = static_cast<double>(dt.y());
-  const double dz = static_cast<double>(dt.z());
-  return std::sqrt(dx * dx + dy * dy + dz * dz);
-}
-
 cv::Mat ColorizeDepth(const cv::Mat& depth_f32) {
   if (depth_f32.empty() || depth_f32.type() != CV_32F) {
     return {};
@@ -73,6 +65,81 @@ cv::Mat NchwToHwcMat(const std::vector<float>& nchw, int h, int w) {
   return hwc;
 }
 
+std::vector<float> PoseToRt3x4RowMajor(const Pose& pose) {
+  const Eigen::Matrix3f R = pose.so3().matrix();
+  const Eigen::Vector3f t = pose.translation();
+  std::vector<float> rt(12, 0.0f);
+  // Fill as column-major for [R|t;0 0 0 1].
+  rt[0] = R(0, 0);
+  rt[1] = R(0, 1);
+  rt[2] = R(0, 2);
+  rt[3] = t.x();
+  rt[4] = R(1, 0);
+  rt[5] = R(1, 1);
+  rt[6] = R(1, 2);
+  rt[7] = t.y();
+  rt[8] = R(2, 0);
+  rt[9] = R(2, 1);
+  rt[10] = R(2, 2);
+  rt[11] = t.z();
+  return rt;
+}
+
+std::vector<float> BuildPairIntrinsics(const Keyframe& a, const Keyframe& b) {
+  const std::vector<float> ka = {
+      a.fx, 0.0f, a.cx,
+      0.0f, a.fy, a.cy,
+      0.0f, 0.0f, 1.0f,
+  };
+  const std::vector<float> kb = {
+      b.fx, 0.0f, b.cx,
+      0.0f, b.fy, b.cy,
+      0.0f, 0.0f, 1.0f,
+  };
+  std::vector<float> out;
+  out.reserve(18);
+  out.insert(out.end(), ka.begin(), ka.end());
+  out.insert(out.end(), kb.begin(), kb.end());
+  return out;
+}
+
+std::vector<float> BuildPairExtrinsics3x4(const Keyframe& a, const Keyframe& b) {
+  mapping::Pose pose_a = mapping::Pose(Eigen::Quaternionf::Identity(), Eigen::Vector3f::Zero());
+  mapping::Pose pose_b = b.pose * a.pose.inverse();
+
+  std::vector<float> out = PoseToRt3x4RowMajor(pose_a);
+  std::vector<float> b_rt = PoseToRt3x4RowMajor(pose_b);
+  out.insert(out.end(), b_rt.begin(), b_rt.end());
+  return out;
+}
+
+bool NameContains(const std::string& name, const char* token) {
+  return name == token || name.rfind(std::string(token) + ".", 0) == 0 ||
+         name.find(token) != std::string::npos;
+}
+
+bool IsShape(const std::vector<int64_t>& shape, std::initializer_list<int64_t> expected) {
+  if (shape.size() != expected.size()) {
+    return false;
+  }
+  size_t i = 0;
+  for (const int64_t v : expected) {
+    if (shape[i++] != v) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::vector<float> BuildImagePairNchw(const std::vector<float>& a_nchw,
+                                      const std::vector<float>& b_nchw) {
+  std::vector<float> input;
+  input.reserve(a_nchw.size() + b_nchw.size());
+  input.insert(input.end(), a_nchw.begin(), a_nchw.end());
+  input.insert(input.end(), b_nchw.begin(), b_nchw.end());
+  return input;
+}
+
 }  // namespace
 
 struct Da3OnnxRunner::Impl {
@@ -103,7 +170,7 @@ struct Da3OnnxRunner::Impl {
       for (size_t i = 0; i < input_names.size(); ++i) {
         const std::vector<int64_t>& shape =
             (i < input_shapes.size()) ? input_shapes[i] : input_shapes.front();
-        BuildOneInput(input_names[i], shape, a_nchw, b_nchw, &owned_inputs, &owned_dims);
+        BuildOneInput(input_names[i], shape, a, b, a_nchw, b_nchw, &owned_inputs, &owned_dims);
         input_values.emplace_back(MakeTensor(owned_inputs.back(), owned_dims.back()));
       }
 
@@ -130,21 +197,9 @@ struct Da3OnnxRunner::Impl {
       }
       cv::resize(depth_rel, depth_rel, a.image_bgr.size(), 0.0, 0.0, cv::INTER_LINEAR);
 
-      std::optional<double> scale;
-      if (out_idx.find("extrinsics") != out_idx.end()) {
-        scale = ComputeScaleFromExtrinsics(outputs[out_idx["extrinsics"]], a.pose, b.pose);
-      }
-
-      cv::Mat depth_scaled = depth_rel;
-      if (scale.has_value() && std::isfinite(*scale)) {
-        depth_scaled = depth_rel * static_cast<float>(*scale);
-        output->scale_text = cv::format("scale=%.4f (real_t/da3_t)", *scale);
-      } else {
-        output->scale_text = "scale: failed (translation)";
-      }
-
-      output->depth_vis = ColorizeDepth(depth_scaled);
-      output->depth_metric = depth_scaled.clone();
+      output->scale_text = "scale: disabled";
+      output->depth_vis = ColorizeDepth(depth_rel);
+      output->depth_metric = depth_rel.clone();
       output->pair_label = cv::format("(kf%d,kf%d) infer=%.1fms", a.idx, b.idx, infer_ms);
       output->pose = b.pose;
       output->fx = b.fx;
@@ -184,7 +239,6 @@ struct Da3OnnxRunner::Impl {
         auto info = session->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo();
         input_shapes.push_back(info.GetShape());
       }
-
       output_names.reserve(out_count);
       for (size_t i = 0; i < out_count; ++i) {
         Ort::AllocatedStringPtr name = session->GetOutputNameAllocated(i, allocator);
@@ -240,39 +294,34 @@ struct Da3OnnxRunner::Impl {
   }
 
   void BuildOneInput(const std::string& input_name, const std::vector<int64_t>& shape,
+                     const Keyframe& a, const Keyframe& b,
                      const std::vector<float>& a_nchw,
                      const std::vector<float>& b_nchw,
                      std::vector<std::vector<float>>* owned_inputs,
                      std::vector<std::vector<int64_t>>* owned_dims) const {
-    if (input_name == "image") {
-      std::vector<float> input;
-      input.reserve(a_nchw.size() + b_nchw.size());
-      input.insert(input.end(), a_nchw.begin(), a_nchw.end());
-      input.insert(input.end(), b_nchw.begin(), b_nchw.end());
-      owned_inputs->push_back(std::move(input));
+    const bool name_is_intrinsics = NameContains(input_name, "intrinsics");
+    const bool name_is_extrinsics = NameContains(input_name, "extrinsics");
+
+    if (name_is_intrinsics) {
+      owned_inputs->push_back(BuildPairIntrinsics(a, b));
+      owned_dims->push_back({1, 2, 3, 3});
+      return;
+    }
+    if (name_is_extrinsics) {
+      owned_inputs->push_back(BuildPairExtrinsics3x4(a, b));
+      owned_dims->push_back({1, 2, 3, 4});
+      return;
+    }
+    if (input_name == "image" || shape.size() == 5) {
+      owned_inputs->push_back(BuildImagePairNchw(a_nchw, b_nchw));
       owned_dims->push_back({1, 2, 3, input_height, input_width});
       return;
     }
-
-    if (shape.size() == 5) {
-      std::vector<float> input;
-      input.reserve(a_nchw.size() + b_nchw.size());
-      input.insert(input.end(), a_nchw.begin(), a_nchw.end());
-      input.insert(input.end(), b_nchw.begin(), b_nchw.end());
-      owned_inputs->push_back(std::move(input));
-      owned_dims->push_back({1, 2, 3, input_height, input_width});
-      return;
-    }
-
     if (shape.size() == 4) {
       const int64_t c1 = shape[1];
       const int64_t c3 = shape[3];
       if (c1 == 6) {
-        std::vector<float> input;
-        input.reserve(a_nchw.size() + b_nchw.size());
-        input.insert(input.end(), a_nchw.begin(), a_nchw.end());
-        input.insert(input.end(), b_nchw.begin(), b_nchw.end());
-        owned_inputs->push_back(std::move(input));
+        owned_inputs->push_back(BuildImagePairNchw(a_nchw, b_nchw));
         owned_dims->push_back({1, 6, input_height, input_width});
         return;
       }
@@ -349,45 +398,6 @@ struct Da3OnnxRunner::Impl {
     }
 
     return false;
-  }
-
-  std::optional<double> ComputeScaleFromExtrinsics(const Ort::Value& value, const Pose& pose1,
-                                                   const Pose& pose2) const {
-    if (!value.IsTensor()) {
-      return std::nullopt;
-    }
-    auto info = value.GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> shape = info.GetShape();
-    if (shape.size() != 4 || shape[0] < 1 || shape[1] < 2 || shape[2] != 3 || shape[3] != 4) {
-      return std::nullopt;
-    }
-
-    const float* ex = value.GetTensorData<float>();
-    auto at = [&](int f, int r, int c) -> double {
-      const size_t idx = ((static_cast<size_t>(f) * 3 + r) * 4) + c;
-      return static_cast<double>(ex[idx]);
-    };
-
-    const double t1x = at(0, 0, 3);
-    const double t1y = at(0, 1, 3);
-    const double t1z = at(0, 2, 3);
-    const double t2x = at(1, 0, 3);
-    const double t2y = at(1, 1, 3);
-    const double t2z = at(1, 2, 3);
-
-    const double dx = t2x - t1x;
-    const double dy = t2y - t1y;
-    const double dz = t2z - t1z;
-    const double da3_delta = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (!std::isfinite(da3_delta) || da3_delta <= 1e-8) {
-      return std::nullopt;
-    }
-
-    const double real_delta = TransDelta(pose1, pose2);
-    if (!std::isfinite(real_delta) || real_delta <= 1e-8) {
-      return std::nullopt;
-    }
-    return real_delta / da3_delta;
   }
 
   Ort::Env env;
