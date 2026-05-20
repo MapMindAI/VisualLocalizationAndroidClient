@@ -20,6 +20,7 @@ cc_binary(
         "//mapping/common:utils",
         "//mapping/da3:da3_onnx_runner",
         "//mapping/da3:render_overlay",
+        "//mapping/voxblox:voxblox_processor",
         "@com_github_grpc_grpc//:grpc++",
         "@eigen//:eigen",
         "@opencv//:core",
