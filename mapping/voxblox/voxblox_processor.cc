@@ -31,7 +31,6 @@ struct VoxbloxProcessor::Impl {
   explicit Impl(const Config& cfg) : config(cfg) {
     voxblox::TsdfMap::Config tsdf_cfg;
     tsdf_cfg.tsdf_voxel_size = config.voxel_size_m;
-    tsdf_cfg.tsdf_voxels_per_side = static_cast<size_t>(std::max(1, config.voxels_per_side));
     tsdf_map = std::make_unique<voxblox::TsdfMap>(tsdf_cfg);
 
     voxblox::TsdfIntegratorBase::Config tsdf_int_cfg;
@@ -39,6 +38,8 @@ struct VoxbloxProcessor::Impl {
     tsdf_int_cfg.min_ray_length_m = config.min_ray_length_m;
     tsdf_int_cfg.max_ray_length_m = config.max_ray_length_m;
     tsdf_int_cfg.voxel_carving_enabled = true;
+    tsdf_int_cfg.use_const_weight = true;
+    tsdf_int_cfg.allow_clear = true;
     tsdf_integrator = std::make_unique<voxblox::FastTsdfIntegrator>(
         tsdf_int_cfg, tsdf_map->getTsdfLayerPtr());
 
@@ -61,7 +62,6 @@ struct VoxbloxProcessor::Impl {
     if (tsdf_map->getTsdfLayer().getNumberOfAllocatedBlocks() == 0) {
       return;
     }
-    // clear_updated_flag_esdf
     esdf_integrator->updateFromTsdfLayer(true);
     if (full_update) {
       esdf_integrator->updateFromTsdfLayerBatch();
@@ -171,13 +171,6 @@ struct VoxbloxProcessor::Impl {
     const int voxel_step = std::max(1, config.viz_voxel_step);
     points->reserve(static_cast<size_t>(config.max_esdf_viz_points));
 
-    float free_plane_val = config.esdf_slice_level_m;
-    if (std::remainder(free_plane_val, layer.voxel_size()) < 1e-6f) {
-      free_plane_val += layer.voxel_size() / 2.0f;
-    }
-    const unsigned int slice_axis =
-        static_cast<unsigned int>(std::max(0, std::min(2, config.esdf_slice_axis)));
-
     for (const voxblox::BlockIndex& block_idx : blocks) {
       auto block_ptr = layer.getBlockPtrByIndex(block_idx);
       if (!block_ptr) {
@@ -198,11 +191,6 @@ struct VoxbloxProcessor::Impl {
         }
 
         const voxblox::Point p = block_ptr->computeCoordinatesFromLinearIndex(i);
-        if (config.esdf_use_slice &&
-            !InSlice(p, slice_axis, free_plane_val, layer.voxel_size())) {
-          continue;
-        }
-
         const voxblox::Color c = EsdfDistanceColor(voxel.distance);
         VizPoint vp;
         vp.x = p.x();
@@ -211,6 +199,7 @@ struct VoxbloxProcessor::Impl {
         vp.r = static_cast<float>(c.b);
         vp.g = static_cast<float>(c.g);
         vp.b = static_cast<float>(c.r);
+        vp.v = voxel.distance;
         points->push_back(vp);
         if (static_cast<int>(points->size()) >= config.max_esdf_viz_points) {
           return;

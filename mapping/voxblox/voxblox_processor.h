@@ -18,6 +18,7 @@ class VoxbloxProcessor {
     float r = 255.0f;
     float g = 255.0f;
     float b = 255.0f;
+    float v = 0.0f;  // Signed ESDF distance value for client-side color mapping.
   };
 
   struct Config {
@@ -26,7 +27,7 @@ class VoxbloxProcessor {
     float truncation_distance_m = 0.2f;
     float min_ray_length_m = 0.1f;
     float max_ray_length_m = 5.0f;
-    float max_depth_m = 5.0f;
+    float max_depth_m = 2.0f;
     int pixel_step = 4;
     float esdf_max_distance_m = 2.0f;
     bool esdf_show_free = false;
@@ -38,7 +39,7 @@ class VoxbloxProcessor {
     float tsdf_surface_band_m = 0.08f;
     float tsdf_min_weight = 1.0f;
     float esdf_vis_distance_m = 1.0f;
-    int viz_voxel_step = 2;
+    int viz_voxel_step = 1;
     int max_tsdf_viz_points = 12000;
     int max_esdf_viz_points = 12000;
   };
