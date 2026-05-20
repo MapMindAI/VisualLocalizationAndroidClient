@@ -1,5 +1,6 @@
-#include "da3_onnx_runner.h"
+#include "mapping/da3/da3_onnx_runner.h"
 
+#include <Eigen/Geometry>
 #include <glog/logging.h>
 #include <onnxruntime_cxx_api.h>
 
@@ -10,7 +11,6 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -20,10 +20,11 @@
 namespace da3client {
 namespace {
 
-double TransDelta(const FramePose& a, const FramePose& b) {
-  const double dx = static_cast<double>(b.tx) - static_cast<double>(a.tx);
-  const double dy = static_cast<double>(b.ty) - static_cast<double>(a.ty);
-  const double dz = static_cast<double>(b.tz) - static_cast<double>(a.tz);
+double TransDelta(const Pose& a, const Pose& b) {
+  const Eigen::Vector3f dt = b.translation() - a.translation();
+  const double dx = static_cast<double>(dt.x());
+  const double dy = static_cast<double>(dt.y());
+  const double dz = static_cast<double>(dt.z());
   return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
@@ -72,6 +73,48 @@ cv::Mat NchwToHwcMat(const std::vector<float>& nchw, int h, int w) {
   return hwc;
 }
 
+std::optional<double> RobustMedianScale(const cv::Mat& ref_depth, const cv::Mat& query_depth,
+                                        int step = 4) {
+  if (ref_depth.empty() || query_depth.empty() || ref_depth.type() != CV_32F ||
+      query_depth.type() != CV_32F) {
+    return std::nullopt;
+  }
+  cv::Mat query_resized;
+  if (query_depth.size() != ref_depth.size()) {
+    cv::resize(query_depth, query_resized, ref_depth.size(), 0.0, 0.0, cv::INTER_LINEAR);
+  } else {
+    query_resized = query_depth;
+  }
+
+  std::vector<float> ratios;
+  ratios.reserve(static_cast<size_t>(ref_depth.rows) * ref_depth.cols / 16);
+  for (int y = 0; y < ref_depth.rows; y += step) {
+    const float* ref_row = ref_depth.ptr<float>(y);
+    const float* q_row = query_resized.ptr<float>(y);
+    for (int x = 0; x < ref_depth.cols; x += step) {
+      const float a = ref_row[x];
+      const float b = q_row[x];
+      if (!std::isfinite(a) || !std::isfinite(b) || a <= 1e-6f || b <= 1e-6f) {
+        continue;
+      }
+      const float r = a / b;
+      if (std::isfinite(r) && r > 1e-4f && r < 1e4f) {
+        ratios.push_back(r);
+      }
+    }
+  }
+  if (ratios.size() < 64) {
+    return std::nullopt;
+  }
+  auto mid = ratios.begin() + static_cast<std::ptrdiff_t>(ratios.size() / 2);
+  std::nth_element(ratios.begin(), mid, ratios.end());
+  const double med = static_cast<double>(*mid);
+  if (!std::isfinite(med) || med <= 0.0) {
+    return std::nullopt;
+  }
+  return med;
+}
+
 }  // namespace
 
 struct Da3OnnxRunner::Impl {
@@ -87,6 +130,8 @@ struct Da3OnnxRunner::Impl {
     if (!ready || output == nullptr) {
       return false;
     }
+    output->kf_a_idx = a.idx;
+    output->kf_b_idx = b.idx;
     output->pair_label = cv::format("(kf%d,kf%d)", a.idx, b.idx);
     try {
       std::vector<float> a_nchw;
@@ -122,28 +167,26 @@ struct Da3OnnxRunner::Impl {
         return false;
       }
 
-      cv::Mat depth_rel;
-      if (!ExtractDepth(outputs[out_idx["depth"]], &depth_rel)) {
+      cv::Mat depth_a_rel;
+      cv::Mat depth_b_rel;
+      if (!ExtractDepthChannel(outputs[out_idx["depth"]], 0, &depth_a_rel) ||
+          !ExtractDepthChannel(outputs[out_idx["depth"]], 1, &depth_b_rel)) {
         output->scale_text = "scale: failed (invalid depth tensor)";
         return false;
       }
-      cv::resize(depth_rel, depth_rel, a.image_bgr.size(), 0.0, 0.0, cv::INTER_LINEAR);
+      cv::resize(depth_a_rel, depth_a_rel, a.image_bgr.size(), 0.0, 0.0, cv::INTER_LINEAR);
+      cv::resize(depth_b_rel, depth_b_rel, b.image_bgr.size(), 0.0, 0.0, cv::INTER_LINEAR);
 
-      std::optional<double> scale;
-      if (out_idx.find("extrinsics") != out_idx.end()) {
-        scale = ComputeScaleFromExtrinsics(outputs[out_idx["extrinsics"]], a.pose, b.pose);
-      }
-
-      cv::Mat depth_scaled = depth_rel;
-      if (scale.has_value() && std::isfinite(*scale)) {
-        depth_scaled = depth_rel * static_cast<float>(*scale);
-        output->scale_text = cv::format("scale=%.4f (real_t/da3_t)", *scale);
-      } else {
-        output->scale_text = "scale: failed (translation)";
-      }
-
-      output->depth_vis = ColorizeDepth(depth_scaled);
+      output->depth_a_rel = std::move(depth_a_rel);
+      output->depth_b_rel = std::move(depth_b_rel);
+      output->depth_vis = ColorizeDepth(output->depth_b_rel);
+      output->depth_metric = output->depth_b_rel.clone();
       output->pair_label = cv::format("(kf%d,kf%d) infer=%.1fms", a.idx, b.idx, infer_ms);
+      output->pose = b.pose;
+      output->fx = b.fx;
+      output->fy = b.fy;
+      output->cx = b.cx;
+      output->cy = b.cy;
       return !output->depth_vis.empty();
     } catch (const std::exception& e) {
       output->scale_text = std::string("scale: failed (") + e.what() + ")";
@@ -303,7 +346,8 @@ struct Da3OnnxRunner::Impl {
                                            dims.size());
   }
 
-  bool ExtractDepth(const Ort::Value& value, cv::Mat* depth_out) const {
+  bool ExtractDepthChannel(const Ort::Value& value, int preferred_channel,
+                           cv::Mat* depth_out) const {
     if (!value.IsTensor() || depth_out == nullptr) {
       return false;
     }
@@ -315,7 +359,7 @@ struct Da3OnnxRunner::Impl {
       const int h = static_cast<int>(shape[2]);
       const int w = static_cast<int>(shape[3]);
       const int c = static_cast<int>(shape[1]);
-      const int channel_idx = std::max(0, std::min(c - 1, 1));
+      const int channel_idx = std::max(0, std::min(c - 1, preferred_channel));
       const size_t offset = static_cast<size_t>(channel_idx) * h * w;
       cv::Mat depth(h, w, CV_32F);
       std::memcpy(depth.data, data + offset, static_cast<size_t>(h) * w * sizeof(float));
@@ -344,8 +388,8 @@ struct Da3OnnxRunner::Impl {
     return false;
   }
 
-  std::optional<double> ComputeScaleFromExtrinsics(const Ort::Value& value, const FramePose& pose1,
-                                                    const FramePose& pose2) const {
+  std::optional<double> ComputeScaleFromExtrinsics(const Ort::Value& value, const Pose& pose1,
+                                                   const Pose& pose2) const {
     if (!value.IsTensor()) {
       return std::nullopt;
     }
@@ -414,10 +458,131 @@ const std::string& Da3OnnxRunner::ErrorMessage() const {
 }
 
 bool Da3OnnxRunner::InferPair(const Keyframe& a, const Keyframe& b, Da3Output* output) {
-  if (!impl_) {
-    return false;
+  return impl_ && impl_->InferPair(a, b, output);
+}
+
+Da3Worker::Da3Worker(std::unique_ptr<Da3OnnxRunner> runner)
+    : runner_(std::move(runner)), worker_(&Da3Worker::ThreadMain, this) {
+  std::lock_guard<std::mutex> lock(mu_);
+  last_status_ = "DA3: waiting for first keyframe pair";
+}
+
+Da3Worker::~Da3Worker() {
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    stop_ = true;
+    jobs_.clear();
   }
-  return impl_->InferPair(a, b, output);
+  cv_.notify_all();
+  if (worker_.joinable()) {
+    worker_.join();
+  }
+}
+
+bool Da3Worker::IsReady() const { return runner_ != nullptr && runner_->IsReady(); }
+
+std::string Da3Worker::ErrorMessage() const {
+  if (!runner_) {
+    return "DA3 runner missing";
+  }
+  return runner_->ErrorMessage();
+}
+
+void Da3Worker::Submit(const Keyframe& a, const Keyframe& b) {
+  std::lock_guard<std::mutex> lock(mu_);
+  jobs_.clear();
+  jobs_.push_back({a, b});
+  last_status_ = cv::format("DA3: queued (kf%d,kf%d)", a.idx, b.idx);
+  cv_.notify_one();
+}
+
+std::optional<Da3Output> Da3Worker::GetLatestOutput() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  if (!latest_output_.has_value()) {
+    return std::nullopt;
+  }
+  Da3Output out;
+  out.scale_text = latest_output_->scale_text;
+  out.pair_label = latest_output_->pair_label;
+  out.depth_vis = latest_output_->depth_vis.clone();
+  out.depth_metric = latest_output_->depth_metric.clone();
+  out.pose = latest_output_->pose;
+  out.kf_a_idx = latest_output_->kf_a_idx;
+  out.kf_b_idx = latest_output_->kf_b_idx;
+  out.fx = latest_output_->fx;
+  out.fy = latest_output_->fy;
+  out.cx = latest_output_->cx;
+  out.cy = latest_output_->cy;
+  return out;
+}
+
+std::string Da3Worker::GetLatestStatus() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  return last_status_;
+}
+
+void Da3Worker::ThreadMain() {
+  while (true) {
+    Job job;
+    {
+      std::unique_lock<std::mutex> lock(mu_);
+      cv_.wait(lock, [&]() { return stop_ || !jobs_.empty(); });
+      if (stop_) {
+        return;
+      }
+      job = std::move(jobs_.front());
+      jobs_.pop_front();
+    }
+
+    Da3Output out;
+    const bool ok = runner_ && runner_->InferPair(job.a, job.b, &out);
+    std::lock_guard<std::mutex> lock(mu_);
+    if (!ok) {
+      latest_output_.reset();
+      if (!out.scale_text.empty()) {
+        last_status_ = "DA3: " + out.scale_text;
+      } else {
+        last_status_ = cv::format("DA3: infer failed (kf%d,kf%d)", job.a.idx, job.b.idx);
+      }
+      continue;
+    }
+
+    double pair_chain_scale = 1.0;
+    bool has_chain_scale = false;
+    if (last_pair_cache_.has_value() &&
+        last_pair_cache_->kf_b_idx == out.kf_a_idx &&
+        !last_pair_cache_->depth_b_rel.empty() &&
+        !out.depth_a_rel.empty()) {
+      const std::optional<double> overlap_scale =
+          RobustMedianScale(last_pair_cache_->depth_b_rel, out.depth_a_rel);
+      if (overlap_scale.has_value() && std::isfinite(*overlap_scale)) {
+        chained_world_scale_ *= *overlap_scale;
+        pair_chain_scale = *overlap_scale;
+        has_chain_scale = true;
+      }
+    } else if (!last_pair_cache_.has_value()) {
+      chained_world_scale_ = 1.0;
+    } else if (last_pair_cache_->kf_b_idx != out.kf_a_idx) {
+      chained_world_scale_ = 1.0;
+    }
+
+    if (std::isfinite(chained_world_scale_) && chained_world_scale_ > 0.0) {
+      out.depth_metric *= static_cast<float>(chained_world_scale_);
+      out.depth_vis = ColorizeDepth(out.depth_metric);
+      if (has_chain_scale) {
+        out.scale_text = cv::format("scale_chain=%.4f total=%.4f", pair_chain_scale, chained_world_scale_);
+      } else {
+        out.scale_text = cv::format("scale_chain=1.0000 total=%.4f", chained_world_scale_);
+      }
+    }
+
+    OverlapCache cache;
+    cache.kf_b_idx = out.kf_b_idx;
+    cache.depth_b_rel = out.depth_b_rel;
+    latest_output_ = std::move(out);
+    last_pair_cache_ = std::move(cache);
+    last_status_ = cv::format("DA3: ok (kf%d,kf%d)", job.a.idx, job.b.idx);
+  }
 }
 
 }  // namespace da3client
