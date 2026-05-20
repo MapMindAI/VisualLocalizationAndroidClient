@@ -34,7 +34,8 @@ Run:
 bazel build //mapping:ws_stream_client
 
 ./bazel-bin/mapping/ws_stream_client \
---host=127.0.0.1 --port=50051 --logtostderr=1 --enable_websocket=true --websocket_port=9002
+--da3_model=http://192.168.19.119:8000/v2/models/depthanything3_trt/infer \
+--host=192.168.19.153 --port=50051 --logtostderr=1 --enable_websocket=true --websocket_port=9002
 ```
 
 Options:

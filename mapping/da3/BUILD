@@ -20,15 +20,10 @@ cc_library(
     hdrs = ["da3_onnx_runner.h"],
     copts = [
         "-std=c++17",
-        "-I/usr/local/include/onnxruntime",
-    ],
-    linkopts = [
-        "-L/usr/local/lib",
-        "-Wl,-rpath,/usr/local/lib",
-        "-lonnxruntime",
     ],
     deps = [
         "//mapping/common:pose_types",
+        "@nlohmann_json//:json",
         "@opencv//:core",
         "@opencv//:imgproc",
         "@opencv//:imgcodecs",

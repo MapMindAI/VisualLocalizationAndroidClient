@@ -41,9 +41,9 @@ DEFINE_string(host, "127.0.0.1", "gRPC server host.");
 DEFINE_int32(port, 50051, "gRPC server port.");
 DEFINE_int32(window_width, 640, "Display window width.");
 DEFINE_int32(window_height, 480, "Display window height.");
-DEFINE_string(da3_model, "python/models/da3_small_2_392x224_sim.onnx", "Path to DA3 ONNX model.");
-DEFINE_int32(da3_width, 392, "DA3 model input width.");
-DEFINE_int32(da3_height, 224, "DA3 model input height.");
+DEFINE_string(da3_model, "http://<host>:8001", "Path to DA3 ONNX model.");
+DEFINE_int32(da3_width, 504, "DA3 model input width.");
+DEFINE_int32(da3_height, 280, "DA3 model input height.");
 DEFINE_double(keyframe_rot_deg, 6.0, "Keyframe threshold: rotation delta in degrees.");
 DEFINE_double(keyframe_trans_m, 0.12, "Keyframe threshold: translation delta in meters.");
 DEFINE_bool(enable_websocket, true, "Enable websocket stream server.");
@@ -97,9 +97,9 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::string window_name = "VLP gRPC Stream";
-  cv::namedWindow(window_name, cv::WINDOW_NORMAL);
-  cv::resizeWindow(window_name, FLAGS_window_width, FLAGS_window_height);
+  // const std::string window_name = "VLP gRPC Stream";
+  // cv::namedWindow(window_name, cv::WINDOW_NORMAL);
+  // cv::resizeWindow(window_name, FLAGS_window_width, FLAGS_window_height);
   if (FLAGS_enable_websocket) {
     web_server = std::make_unique<vlpweb::SimpleWebsocketServer>(FLAGS_websocket_port,
                                                                   FLAGS_web_client_html);
@@ -214,8 +214,8 @@ int main(int argc, char** argv) {
     }
 
     cv::Mat combined;
-    cv::hconcat(overlay, depth_panel, combined);
-    cv::imshow(window_name, combined);
+    cv::vconcat(overlay, depth_panel, combined);
+    // cv::imshow(window_name, combined);
 
     trajectory.push_back(
         {packet.pose.translation().x(), packet.pose.translation().y(), packet.pose.translation().z()});
@@ -318,12 +318,12 @@ int main(int argc, char** argv) {
     }
 skip_web_send:;
 
-    const int key = cv::waitKey(1) & 0xFF;
-    if (key == 'q') {
-      LOG(INFO) << "Quit requested by user.";
-      user_quit = true;
-      break;
-    }
+    // const int key = cv::waitKey(1) & 0xFF;
+    // if (key == 'q') {
+    //   LOG(INFO) << "Quit requested by user.";
+    //   user_quit = true;
+    //   break;
+    // }
 
     if (frame_count - last_log_count >= 30) {
       last_log_count = frame_count;
@@ -342,7 +342,7 @@ skip_web_send:;
                << status.error_message();
   }
 
-  cv::destroyAllWindows();
+  // cv::destroyAllWindows();
   if (web_server) {
     web_server->Stop();
   }

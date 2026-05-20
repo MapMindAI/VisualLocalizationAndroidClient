@@ -49,3 +49,11 @@ def visual_localization_client_deps():
         strip_prefix = "Sophus-1.22.10",
         url = "https://github.com/strasdat/Sophus/archive/refs/tags/1.22.10.zip",
     )
+
+    maybe(
+        http_archive,
+        name = "nlohmann_json",
+        build_file = "@mm_visual_localization_client//third_party:nlohmann_json.BUILD",
+        sha256 = "e5c7a9f49a16814be27e4ed0ee900ecd0092bfb7dbfca65b5a421b774dccaaed",
+        url = "https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip",
+    )
