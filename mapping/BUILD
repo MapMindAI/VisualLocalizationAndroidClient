@@ -30,3 +30,28 @@ cc_binary(
         "@sophus//:sophus",
     ],
 )
+
+cc_binary(
+    name = "dataset_rgbd_player",
+    srcs = [
+        "dataset_rgbd_player.cc",
+    ],
+    copts = [
+        "-std=c++17",
+    ],
+    linkopts = [
+        "-lgflags",
+        "-lglog",
+    ],
+    deps = [
+        "//mapping/backend:simple_websocket_server",
+        "//mapping/common:utils",
+        "//mapping/common:pose_types",
+        "//mapping/voxblox:voxblox_processor",
+        "@opencv//:core",
+        "@opencv//:imgproc",
+        "@opencv//:highgui",
+        "@opencv//:imgcodecs",
+        "@sophus//:sophus",
+    ],
+)
