@@ -114,6 +114,8 @@ Run:
   --dataset_dir=/path/to/dataset \
   --speed=1.0 \
   --loop=true \
+  --enable_websocket=true \
+  --websocket_port=9002 \
   --depth_scale=0.001 \
   --depth_vis_max_m=5.0
 ```
@@ -135,6 +137,9 @@ Useful flags:
 - `--depth_scale`: scale factor for integer depth images (e.g. `0.001` for mm -> m)
 - `--window_view`: OpenCV window name for side-by-side RGBD view
 - `--render_max_size`: max width/height of rendered combined image (default `1080`)
+- `--enable_opencv_viz`: enable local OpenCV window (default `false`)
+- `--enable_websocket`: stream output to `web_client.html` schema (default `true`)
+- `--websocket_port`, `--web_client_html`: web viewer serving options
 
 Optional overrides:
 

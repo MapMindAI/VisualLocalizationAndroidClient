@@ -44,7 +44,10 @@ cc_binary(
         "-lglog",
     ],
     deps = [
+        "//mapping/backend:simple_websocket_server",
+        "//mapping/common:utils",
         "//mapping/common:pose_types",
+        "//mapping/voxblox:voxblox_processor",
         "@opencv//:core",
         "@opencv//:imgproc",
         "@opencv//:highgui",

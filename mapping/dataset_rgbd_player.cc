@@ -1,4 +1,7 @@
 #include "mapping/common/pose_types.h"
+#include "mapping/common/utils.h"
+#include "mapping/backend/simple_websocket_server.h"
+#include "mapping/voxblox/voxblox_processor.h"
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -9,8 +12,10 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <fstream>
 #include <filesystem>
 #include <sstream>
@@ -33,6 +38,17 @@ DEFINE_double(depth_vis_max_m, 5.0, "Max depth (m) for visualization normalizati
 DEFINE_double(depth_scale, 0.001, "Scale for integer depth image to meters.");
 DEFINE_string(window_view, "RGBD Replay", "OpenCV window name for combined RGBD view.");
 DEFINE_int32(render_max_size, 1080, "Max width/height for rendered combined image.");
+DEFINE_bool(enable_opencv_viz, false, "Enable local OpenCV visualization.");
+DEFINE_bool(enable_websocket, true, "Enable websocket output for web_client.html.");
+DEFINE_int32(websocket_port, 9002, "Websocket server port.");
+DEFINE_string(web_client_html, "mapping/backend/web_client.html", "Path to web client html.");
+DEFINE_bool(enable_voxblox, true, "Enable Voxblox TSDF/ESDF integration from replay depth+pose.");
+DEFINE_double(voxblox_voxel_size_m, 0.1, "Voxblox voxel size in meters.");
+DEFINE_double(voxblox_max_depth_m, 2.0, "Max depth (m) used for TSDF integration.");
+DEFINE_double(fx, 0.0, "Camera fx. If <= 0, infer from image width.");
+DEFINE_double(fy, 0.0, "Camera fy. If <= 0, infer from image height.");
+DEFINE_double(cx, -1.0, "Camera cx. If < 0, use image center.");
+DEFINE_double(cy, -1.0, "Camera cy. If < 0, use image center.");
 
 enum class EventType { kRgb, kDepth, kPose };
 
@@ -139,6 +155,11 @@ bool ReadTimedPoseCsv(const std::string& csv_path, std::vector<TimedPose>* rows)
     LOG(ERROR) << "Cannot open: " << csv_path;
     return false;
   }
+
+  Eigen::Quaternionf q_offset(
+      Eigen::AngleAxisf(-static_cast<float>(M_PI) / 2.0f, Eigen::Vector3f::UnitX()));
+  mapping::Pose offset(q_offset, Eigen::Vector3f(0.0f, 0.0f, 0.0f));
+
   std::string line;
   std::vector<std::string> tokens;
   int line_no = 0;
@@ -164,7 +185,10 @@ bool ReadTimedPoseCsv(const std::string& csv_path, std::vector<TimedPose>* rows)
     } else {
       q.normalize();
     }
-    rows->push_back(TimedPose{ts_ns, mapping::Pose(q, Eigen::Vector3f(tx, ty, tz))});
+    mapping::Pose pose_raw(q, Eigen::Vector3f(tx, ty, tz));
+
+    // transform the coordinate of the pose
+    rows->push_back(TimedPose{ts_ns, offset * pose_raw});
   }
   std::sort(rows->begin(), rows->end(), [](const TimedPose& a, const TimedPose& b) {
     return a.ts_ns < b.ts_ns;
@@ -262,13 +286,36 @@ int main(int argc, char** argv) {
   std::vector<TimedEvent> events;
   BuildEvents(rgb_rows, depth_rows, pose_rows, &events);
 
-  cv::namedWindow(FLAGS_window_view, cv::WINDOW_NORMAL);
+  std::unique_ptr<vlpweb::SimpleWebsocketServer> web_server;
+  if (FLAGS_enable_websocket) {
+    web_server = std::make_unique<vlpweb::SimpleWebsocketServer>(FLAGS_websocket_port,
+                                                                  FLAGS_web_client_html);
+    web_server->Start();
+    LOG(INFO) << "Open web client: http://127.0.0.1:" << FLAGS_websocket_port << "/index.html";
+  }
+
+  if (FLAGS_enable_opencv_viz) {
+    cv::namedWindow(FLAGS_window_view, cv::WINDOW_NORMAL);
+  }
 
   const double speed = std::max(1e-3, FLAGS_speed);
   size_t loop_count = 0;
   cv::Mat latest_rgb;
   cv::Mat latest_depth_vis;
   mapping::Pose latest_pose = mapping::Pose();
+  bool has_pose = false;
+  std::deque<std::array<float, 3>> trajectory;
+  std::vector<mapping::VoxbloxProcessor::VizPoint> esdf_viz_points;
+  bool esdf_points_updated = false;
+  int frame_id = 0;
+  auto last_send = std::chrono::steady_clock::now();
+  std::unique_ptr<mapping::VoxbloxProcessor> voxblox_processor;
+  if (FLAGS_enable_voxblox) {
+    mapping::VoxbloxProcessor::Config cfg;
+    cfg.voxel_size_m = static_cast<float>(FLAGS_voxblox_voxel_size_m);
+    cfg.max_depth_m = static_cast<float>(FLAGS_voxblox_max_depth_m);
+    voxblox_processor = std::make_unique<mapping::VoxbloxProcessor>(cfg);
+  }
 
   do {
     ++loop_count;
@@ -290,15 +337,38 @@ int main(int argc, char** argv) {
       } else if (e.type == EventType::kDepth) {
         const cv::Mat raw = cv::imread(depth_rows[e.index].path, cv::IMREAD_UNCHANGED);
         const cv::Mat depth_m = DepthToMeters(raw, static_cast<float>(FLAGS_depth_scale));
-        if (!depth_m.empty()) latest_depth_vis =
-            ColorizeDepth(depth_m, static_cast<float>(FLAGS_depth_vis_max_m));
+        if (!depth_m.empty()) {
+          latest_depth_vis = ColorizeDepth(depth_m, static_cast<float>(FLAGS_depth_vis_max_m));
+          if (voxblox_processor && has_pose) {
+            const float fx =
+                FLAGS_fx > 0.0 ? static_cast<float>(FLAGS_fx) : static_cast<float>(depth_m.cols);
+            const float fy =
+                FLAGS_fy > 0.0 ? static_cast<float>(FLAGS_fy) : static_cast<float>(depth_m.rows);
+            const float cx = FLAGS_cx >= 0.0 ? static_cast<float>(FLAGS_cx)
+                                             : static_cast<float>(depth_m.cols - 1) * 0.5f;
+            const float cy = FLAGS_cy >= 0.0 ? static_cast<float>(FLAGS_cy)
+                                             : static_cast<float>(depth_m.rows - 1) * 0.5f;
+            if (voxblox_processor->Integrate(depth_m, latest_pose, fx, fy, cx, cy)) {
+              voxblox_processor->GetEsdfVisualization(&esdf_viz_points);
+              esdf_points_updated = true;
+            }
+          }
+        }
       } else {
         latest_pose = pose_rows[e.index].pose;
+        has_pose = true;
       }
 
-      if (!latest_rgb.empty() && !latest_depth_vis.empty()) {
-        cv::Mat rgb_show = latest_rgb.clone();
-        cv::Mat depth_show = latest_depth_vis;
+      if (!latest_depth_vis.empty()) {
+        cv::Mat rgb_show;
+        if (!latest_rgb.empty()) {
+          rgb_show = latest_rgb.clone();
+        } else {
+          rgb_show = cv::Mat::zeros(latest_depth_vis.size(), CV_8UC3);
+          cv::putText(rgb_show, "No RGB", cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX, 1.0,
+                      cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
+        }
+        cv::Mat depth_show = latest_depth_vis.clone();
         if (depth_show.size() != rgb_show.size()) {
           cv::resize(depth_show, depth_show, rgb_show.size(), 0.0, 0.0, cv::INTER_LINEAR);
         }
@@ -311,18 +381,82 @@ int main(int argc, char** argv) {
         cv::Mat combined;
         cv::hconcat(rgb_show, depth_show, combined);
         cv::Mat render = ResizeToMaxSize(combined, FLAGS_render_max_size);
-        cv::imshow(FLAGS_window_view, render);
+        if (FLAGS_enable_opencv_viz) {
+          cv::imshow(FLAGS_window_view, render);
+        }
+
+        trajectory.push_back({t.x(), t.y(), t.z()});
+        while (trajectory.size() > 1200) {
+          trajectory.pop_front();
+        }
+
+        if (web_server) {
+          std::vector<uint8_t> img_buf;
+          cv::imencode(".jpg", render, img_buf, {cv::IMWRITE_JPEG_QUALITY, 80});
+          const std::string img_b64 = vlputil::Base64Encode(img_buf.data(), img_buf.size());
+
+          const auto now_send = std::chrono::steady_clock::now();
+          const double dt = std::chrono::duration<double>(now_send - last_send).count();
+          const double fps = dt > 1e-6 ? 1.0 / dt : 0.0;
+          last_send = now_send;
+          ++frame_id;
+
+          std::ostringstream oss;
+          oss << "{";
+          oss << "\"type\":\"update\",";
+          oss << "\"frame_id\":" << frame_id << ",";
+          oss << "\"image_jpeg_b64\":\"" << img_b64 << "\",";
+          oss << "\"fps\":" << fps << ",";
+          oss << "\"pose\":{"
+              << "\"tx\":" << t.x() << ",\"ty\":" << t.y() << ",\"tz\":" << t.z() << "},";
+          oss << "\"scale_text\":\"dataset replay\",";
+          oss << "\"da3_status\":\"offline rgbd replay\",";
+          oss << "\"voxblox\":{\"enabled\":" << (voxblox_processor ? "true" : "false") << ","
+              << "\"integrated_frames\":"
+              << (voxblox_processor ? voxblox_processor->IntegratedFrameCount() : 0) << ","
+              << "\"voxel_size_m\":"
+              << (voxblox_processor ? FLAGS_voxblox_voxel_size_m : 0.0) << ","
+              << "\"esdf_count\":" << esdf_viz_points.size() << "},";
+          oss << "\"trajectory\":[";
+          for (size_t k = 0; k < trajectory.size(); ++k) {
+            if (k) oss << ",";
+            oss << "[" << trajectory[k][0] << "," << trajectory[k][1] << "," << trajectory[k][2]
+                << "]";
+          }
+          oss << "]";
+          if (esdf_points_updated) {
+            oss << ",\"esdf_points\":[";
+            for (size_t p = 0; p < esdf_viz_points.size(); ++p) {
+              if (p) oss << ",";
+              const auto& ep = esdf_viz_points[p];
+              oss << "[" << ep.x << "," << ep.y << "," << ep.z << "," << ep.r << "," << ep.g
+                  << "," << ep.b << "," << ep.v << "]";
+            }
+            oss << "]";
+            esdf_points_updated = false;
+          }
+          oss << "}";
+          web_server->BroadcastText(oss.str());
+        }
       }
-      const int key = cv::waitKey(1);
-      if (key == 27 || key == 'q' || key == 'Q') {
-        cv::destroyAllWindows();
-        google::ShutdownGoogleLogging();
-        return 0;
+      if (FLAGS_enable_opencv_viz) {
+        const int key = cv::waitKey(1);
+        if (key == 27 || key == 'q' || key == 'Q') {
+          cv::destroyAllWindows();
+          if (web_server) web_server->Stop();
+          google::ShutdownGoogleLogging();
+          return 0;
+        }
       }
     }
   } while (FLAGS_loop);
 
-  cv::destroyAllWindows();
+  if (FLAGS_enable_opencv_viz) {
+    cv::destroyAllWindows();
+  }
+  if (web_server) {
+    web_server->Stop();
+  }
   google::ShutdownGoogleLogging();
   return 0;
 }
