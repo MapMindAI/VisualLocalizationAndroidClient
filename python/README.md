@@ -5,6 +5,8 @@ This folder contains the desktop gRPC client for `app_vlp` streaming.
 ## Files
 
 - `ws_stream_client.py`: gRPC stream receiver + OpenCV viewer + keyframe/DA3 processor.
+- `grpc_recorder.py`: records raw gRPC stream payloads with receive-time intervals.
+- `grpc_player.py`: replays recorded payloads at original timing.
 - `da3_pair_processor.py`: extracted DA3 ONNX pair-inference module.
 - `models/da3_small_2_392x224_sim.onnx`: Depth Anything 3 ONNX model (pair inference, 392x224).
 
@@ -13,6 +15,50 @@ This folder contains the desktop gRPC client for `app_vlp` streaming.
 ```bash
 pip install grpcio opencv-python numpy onnxruntime
 ```
+
+## Record stream data
+
+Record sequential payloads from gRPC stream:
+
+```bash
+python3 python/grpc_recorder.py \
+  --host 192.168.19.153 \
+  --port 50051 \
+  --output data/vlp_stream.rec
+```
+
+Press `Ctrl+C` to stop.
+
+## Replay recorded data
+
+Replay using original receive-time intervals:
+
+```bash
+python3 python/grpc_player.py --input data/vlp_stream.rec
+```
+
+Useful options:
+
+- `--speed 2.0` for 2x faster replay
+- `--loop` to replay continuously
+- `--no-display` to replay timing only without OpenCV window
+
+## Replay as gRPC server
+
+Run player as a gRPC server with the same endpoint:
+
+```bash
+python3 python/grpc_player.py \
+  --input data/vlp_stream.rec \
+  --serve-port 50051 \
+  --loop
+```
+
+It serves:
+
+- `/vlp.FrameStreamService/StreamFrames` (unary-stream, raw bytes)
+
+Then run your existing client against this host/port.
 
 ## Run
 
