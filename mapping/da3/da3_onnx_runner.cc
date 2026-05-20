@@ -73,8 +73,8 @@ cv::Mat NchwToHwcMat(const std::vector<float>& nchw, int h, int w) {
   return hwc;
 }
 
-std::optional<double> RobustMedianScale(const cv::Mat& ref_depth, const cv::Mat& query_depth,
-                                        int step = 4) {
+std::optional<double> MeanRatioScale(const cv::Mat& ref_depth, const cv::Mat& query_depth,
+                                     float depth_max_m, int step = 4) {
   if (ref_depth.empty() || query_depth.empty() || ref_depth.type() != CV_32F ||
       query_depth.type() != CV_32F) {
     return std::nullopt;
@@ -94,7 +94,8 @@ std::optional<double> RobustMedianScale(const cv::Mat& ref_depth, const cv::Mat&
     for (int x = 0; x < ref_depth.cols; x += step) {
       const float a = ref_row[x];
       const float b = q_row[x];
-      if (!std::isfinite(a) || !std::isfinite(b) || a <= 1e-6f || b <= 1e-6f) {
+      if (!std::isfinite(a) || !std::isfinite(b) || a <= 1e-6f || b <= 1e-6f ||
+          a > depth_max_m || b > depth_max_m) {
         continue;
       }
       const float r = a / b;
@@ -106,13 +107,15 @@ std::optional<double> RobustMedianScale(const cv::Mat& ref_depth, const cv::Mat&
   if (ratios.size() < 64) {
     return std::nullopt;
   }
-  auto mid = ratios.begin() + static_cast<std::ptrdiff_t>(ratios.size() / 2);
-  std::nth_element(ratios.begin(), mid, ratios.end());
-  const double med = static_cast<double>(*mid);
-  if (!std::isfinite(med) || med <= 0.0) {
+  double sum = 0.0;
+  for (const float r : ratios) {
+    sum += static_cast<double>(r);
+  }
+  const double mean = sum / static_cast<double>(ratios.size());
+  if (!std::isfinite(mean) || mean <= 0.0) {
     return std::nullopt;
   }
-  return med;
+  return mean;
 }
 
 }  // namespace
@@ -461,8 +464,10 @@ bool Da3OnnxRunner::InferPair(const Keyframe& a, const Keyframe& b, Da3Output* o
   return impl_ && impl_->InferPair(a, b, output);
 }
 
-Da3Worker::Da3Worker(std::unique_ptr<Da3OnnxRunner> runner)
-    : runner_(std::move(runner)), worker_(&Da3Worker::ThreadMain, this) {
+Da3Worker::Da3Worker(std::unique_ptr<Da3OnnxRunner> runner, float scale_refine_depth_max_m)
+    : runner_(std::move(runner)),
+      scale_refine_depth_max_m_(scale_refine_depth_max_m),
+      worker_(&Da3Worker::ThreadMain, this) {
   std::lock_guard<std::mutex> lock(mu_);
   last_status_ = "DA3: waiting for first keyframe pair";
 }
@@ -554,7 +559,8 @@ void Da3Worker::ThreadMain() {
         !last_pair_cache_->depth_b_rel.empty() &&
         !out.depth_a_rel.empty()) {
       const std::optional<double> overlap_scale =
-          RobustMedianScale(last_pair_cache_->depth_b_rel, out.depth_a_rel);
+          MeanRatioScale(last_pair_cache_->depth_b_rel, out.depth_a_rel,
+                         scale_refine_depth_max_m_);
       if (overlap_scale.has_value() && std::isfinite(*overlap_scale)) {
         chained_world_scale_ *= *overlap_scale;
         pair_chain_scale = *overlap_scale;

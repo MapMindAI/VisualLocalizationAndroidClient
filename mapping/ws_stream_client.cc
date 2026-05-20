@@ -44,12 +44,15 @@ DEFINE_int32(window_height, 480, "Display window height.");
 DEFINE_string(da3_model, "python/models/da3_small_2_392x224_sim.onnx", "Path to DA3 ONNX model.");
 DEFINE_int32(da3_width, 392, "DA3 model input width.");
 DEFINE_int32(da3_height, 224, "DA3 model input height.");
+DEFINE_double(da3_scale_refine_depth_max_m, 2.0,
+              "Max depth (meters) used in DA3 overlap-scale refinement.");
 DEFINE_double(keyframe_rot_deg, 6.0, "Keyframe threshold: rotation delta in degrees.");
 DEFINE_double(keyframe_trans_m, 0.12, "Keyframe threshold: translation delta in meters.");
 DEFINE_bool(enable_websocket, true, "Enable websocket stream server.");
 DEFINE_int32(websocket_port, 9002, "Websocket server port.");
 DEFINE_int32(web_depth_history, 5, "Recent depth clouds kept for web map.");
 DEFINE_int32(web_depth_step, 6, "Pixel stride when generating web depth cloud.");
+DEFINE_double(web_depth_max_m, 2.0, "Max depth (meters) when generating web depth cloud.");
 DEFINE_string(web_client_html, "mapping/backend/web_client.html", "Path to web client html.");
 DEFINE_double(web_send_hz, 10.0, "Websocket broadcast rate.");
 DEFINE_int32(web_max_traj_points, 1200, "Max trajectory points sent to browser.");
@@ -92,7 +95,8 @@ int main(int argc, char** argv) {
     if (!runner->IsReady()) {
       LOG(WARNING) << "[DA3] disabled: " << runner->ErrorMessage();
     } else {
-      da3_worker = std::make_unique<da3client::Da3Worker>(std::move(runner));
+      da3_worker = std::make_unique<da3client::Da3Worker>(
+          std::move(runner), static_cast<float>(FLAGS_da3_scale_refine_depth_max_m));
       LOG(INFO) << "[DA3] worker started.";
     }
   }
@@ -236,7 +240,9 @@ int main(int argc, char** argv) {
           const float* row = out->depth_metric.ptr<float>(v);
           for (int u = 0; u < out->depth_metric.cols; u += step) {
             const float z = row[u];
-            if (!std::isfinite(z) || z <= 0.05f || z > 50.0f || out->fx <= 0.0f || out->fy <= 0.0f) {
+            if (!std::isfinite(z) || z <= 0.05f ||
+                z > static_cast<float>(FLAGS_web_depth_max_m) || out->fx <= 0.0f ||
+                out->fy <= 0.0f) {
               continue;
             }
             const float x = (static_cast<float>(u) - out->cx) * z / out->fx;
