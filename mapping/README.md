@@ -8,19 +8,10 @@ This folder includes a C++ reimplementation of the Python stream client:
   - camera intrinsics (`fx fy cx cy`)
   - camera pose (`qx qy qz qw tx ty tz`)
 
-## Build
-
-```bash
-bazel build //bazel:ws_stream_client
-```
-
-Binary output:
-
-```bash
-./bazel-bin/bazel/ws_stream_client
-```
-
 ## Run with Android phone
+
+https://github.com/user-attachments/assets/9f29c5c9-f34a-402a-b798-6b70874babde
+
 
 Forward gRPC port:
 
@@ -28,7 +19,7 @@ Forward gRPC port:
 adb forward tcp:50051 tcp:50051
 ```
 
-Run:
+Build & Run:
 
 ```bash
 bazel build //mapping:ws_stream_client
@@ -38,10 +29,3 @@ bazel build //mapping:ws_stream_client
 --enable_websocket=true --websocket_port=9002 \
 --enable_voxblox=true
 ```
-
-Options:
-
-- `--window-width` default `640`
-- `--window-height` default `480`
-
-Press `q` in the OpenCV window to quit.
