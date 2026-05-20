@@ -97,9 +97,9 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::string window_name = "VLP gRPC Stream";
-  cv::namedWindow(window_name, cv::WINDOW_NORMAL);
-  cv::resizeWindow(window_name, FLAGS_window_width, FLAGS_window_height);
+  // const std::string window_name = "VLP gRPC Stream";
+  // cv::namedWindow(window_name, cv::WINDOW_NORMAL);
+  // cv::resizeWindow(window_name, FLAGS_window_width, FLAGS_window_height);
   if (FLAGS_enable_websocket) {
     web_server = std::make_unique<vlpweb::SimpleWebsocketServer>(FLAGS_websocket_port,
                                                                   FLAGS_web_client_html);
@@ -214,8 +214,8 @@ int main(int argc, char** argv) {
     }
 
     cv::Mat combined;
-    cv::hconcat(overlay, depth_panel, combined);
-    cv::imshow(window_name, combined);
+    cv::vconcat(overlay, depth_panel, combined);
+    // cv::imshow(window_name, combined);
 
     trajectory.push_back(
         {packet.pose.translation().x(), packet.pose.translation().y(), packet.pose.translation().z()});
@@ -318,12 +318,12 @@ int main(int argc, char** argv) {
     }
 skip_web_send:;
 
-    const int key = cv::waitKey(1) & 0xFF;
-    if (key == 'q') {
-      LOG(INFO) << "Quit requested by user.";
-      user_quit = true;
-      break;
-    }
+    // const int key = cv::waitKey(1) & 0xFF;
+    // if (key == 'q') {
+    //   LOG(INFO) << "Quit requested by user.";
+    //   user_quit = true;
+    //   break;
+    // }
 
     if (frame_count - last_log_count >= 30) {
       last_log_count = frame_count;
@@ -342,7 +342,7 @@ skip_web_send:;
                << status.error_message();
   }
 
-  cv::destroyAllWindows();
+  // cv::destroyAllWindows();
   if (web_server) {
     web_server->Stop();
   }

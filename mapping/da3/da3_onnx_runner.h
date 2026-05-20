@@ -30,8 +30,12 @@ struct Keyframe {
 struct Da3Output {
   cv::Mat depth_vis;
   cv::Mat depth_metric;
+  cv::Mat depth_a_rel;
+  cv::Mat depth_b_rel;
   std::string scale_text = "scale: n/a (pose-translation)";
   std::string pair_label;
+  int kf_a_idx = 0;
+  int kf_b_idx = 0;
   Pose pose;
   float fx = 0.0f;
   float fy = 0.0f;
@@ -83,7 +87,14 @@ class Da3Worker {
   mutable std::mutex mu_;
   std::condition_variable cv_;
   std::deque<Job> jobs_;
+  struct OverlapCache {
+    int kf_b_idx = 0;
+    cv::Mat depth_b_rel;
+  };
+
   std::optional<Da3Output> latest_output_;
+  std::optional<OverlapCache> last_pair_cache_;
+  double chained_world_scale_ = 1.0;
   std::string last_status_;
   bool stop_ = false;
   std::thread worker_;
