@@ -10,6 +10,7 @@ This directory contains the C++ online mapping client that:
 Main entry:
 
 - `mono_vio_ws_stream_client.cc`
+- `dataset_rgbd_player.cc` (offline replay from timestamped RGB/depth/pose files)
 
 ## Run with Android phone
 
@@ -85,3 +86,57 @@ Web:
 - `--web_send_hz`
 - `--web_max_traj_points`
 - `--web_client_html`
+
+## Offline dataset replay
+
+Binary:
+
+```text
+//mapping:dataset_rgbd_player
+```
+
+Input CSV format:
+
+- `rgb.csv`: `timestamp_ns,path_to_rgb_image`
+- `depth.csv`: `timestamp_ns,path_to_depth_image`
+- `pose.csv`: `timestamp_ns,qx,qy,qz,qw,tx,ty,tz`
+
+Notes:
+
+- Timestamps do not need to be aligned across RGB/depth/pose files.
+- Replay merges all events by timestamp and always displays latest RGB and latest depth.
+- Depth image can be `CV_16U` (typical mm) or `CV_32F` (meters).
+
+Run:
+
+```bash
+./bazel-bin/mapping/dataset_rgbd_player \
+  --dataset_dir=/path/to/dataset \
+  --speed=1.0 \
+  --loop=true \
+  --depth_scale=0.001 \
+  --depth_vis_max_m=5.0
+```
+
+Expected dataset layout:
+
+```text
+/path/to/dataset/
+  rgb.csv
+  depth.csv
+  pose.csv
+```
+
+Useful flags:
+
+- `--dataset_dir`: folder containing `rgb.csv`, `depth.csv`, `pose.csv`
+- `--speed`: replay speed multiplier
+- `--loop`: replay continuously
+- `--depth_scale`: scale factor for integer depth images (e.g. `0.001` for mm -> m)
+- `--window_view`: OpenCV window name for side-by-side RGBD view
+- `--render_max_size`: max width/height of rendered combined image (default `1080`)
+
+Optional overrides:
+
+- `--rgb_csv`, `--depth_csv`, `--pose_csv` can override individual files.
+- Relative image paths inside CSV are resolved relative to each CSV file location.

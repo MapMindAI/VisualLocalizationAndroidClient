@@ -30,3 +30,25 @@ cc_binary(
         "@sophus//:sophus",
     ],
 )
+
+cc_binary(
+    name = "dataset_rgbd_player",
+    srcs = [
+        "dataset_rgbd_player.cc",
+    ],
+    copts = [
+        "-std=c++17",
+    ],
+    linkopts = [
+        "-lgflags",
+        "-lglog",
+    ],
+    deps = [
+        "//mapping/common:pose_types",
+        "@opencv//:core",
+        "@opencv//:imgproc",
+        "@opencv//:highgui",
+        "@opencv//:imgcodecs",
+        "@sophus//:sophus",
+    ],
+)
