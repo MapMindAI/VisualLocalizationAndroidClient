@@ -2,9 +2,9 @@ package(default_visibility = ["//visibility:public"])
 
 
 cc_binary(
-    name = "ws_stream_client",
+    name = "mono_vio_ws_stream_client",
     srcs = [
-        "ws_stream_client.cc",
+        "mono_vio_ws_stream_client.cc",
     ],
     copts = [
         "-std=c++17",

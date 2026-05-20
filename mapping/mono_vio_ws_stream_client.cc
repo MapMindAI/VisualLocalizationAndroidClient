@@ -64,7 +64,7 @@ DEFINE_int32(web_max_traj_points, 1200, "Max trajectory points sent to browser."
 int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
   gflags::SetUsageMessage(
-      "ws_stream_client --host=127.0.0.1 --port=50051 "
+      "mono_vio_ws_stream_client --host=127.0.0.1 --port=50051 "
       "--window_width=640 --window_height=480 "
       "--da3_model=python/models/da3_small_2_392x224_sim.onnx");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
