@@ -1,6 +1,7 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
 
 def visual_localization_client_deps():
     """Loads dependencies required by visual localization client tools."""
@@ -48,4 +49,29 @@ def visual_localization_client_deps():
         build_file = "@mm_visual_localization_client//third_party:sophus.BUILD",
         strip_prefix = "Sophus-1.22.10",
         url = "https://github.com/strasdat/Sophus/archive/refs/tags/1.22.10.zip",
+    )
+
+    # for voxblox
+    maybe(
+        new_git_repository,
+        name = "eigen_checks",
+        build_file = "@mm_visual_localization_client//third_party:eigen_checks.BUILD",
+        commit = "22a6247a3df11bc285d43d1a030f4e874a413997",
+        remote = "https://github.com/ethz-asl/eigen_checks",
+    )
+
+    maybe(
+        new_git_repository,
+        name = "minkindr",
+        build_file = "@mm_visual_localization_client//third_party:minkindr.BUILD",
+        commit = "564f12639a8447d4d3e5e7707851424302941056",
+        remote = "https://github.com/ethz-asl/minkindr",
+    )
+
+    maybe(
+        new_git_repository,
+        name = "voxblox",
+        build_file = "@mm_visual_localization_client//third_party:voxblox.BUILD",
+        commit = "c8066b04075d2fee509de295346b1c0b788c4f38",
+        remote = "https://github.com/ethz-asl/voxblox",
     )

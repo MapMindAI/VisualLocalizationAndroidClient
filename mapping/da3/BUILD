@@ -32,5 +32,6 @@ cc_library(
         "@opencv//:core",
         "@opencv//:imgproc",
         "@opencv//:imgcodecs",
+        "@voxblox",
     ],
 )

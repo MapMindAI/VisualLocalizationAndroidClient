@@ -21,6 +21,7 @@
         <div id="fps">fps: 0</div>
         <div id="pose">pose: (0,0,0)</div>
         <div id="scale">scale: n/a</div>
+        <div id="vox">voxblox: off</div>
       </div>
     </div>
     <canvas id="view"></canvas>
@@ -42,6 +43,7 @@
     const fpsEl = document.getElementById('fps');
     const poseEl = document.getElementById('pose');
     const scaleEl = document.getElementById('scale');
+    const voxEl = document.getElementById('vox');
 
     const canvas = document.getElementById('view');
     const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
@@ -61,7 +63,7 @@
     scene.add(trajLine);
     const posePt = new THREE.Mesh(new THREE.SphereGeometry(0.03,12,12), new THREE.MeshBasicMaterial({color:0x66ff66}));
     scene.add(posePt);
-    const cloudGroup = new THREE.Group(); scene.add(cloudGroup);
+    const esdfGroup = new THREE.Group(); scene.add(esdfGroup);
 
     function resize(){
       const w=canvas.clientWidth,h=canvas.clientHeight;
@@ -82,14 +84,49 @@
       trajGeom.computeBoundingSphere();
       if(t.length){const p=t[t.length-1];posePt.position.set(p[0],p[1],p[2]);}
     }
-    function setClouds(clouds){
-      while(cloudGroup.children.length) cloudGroup.remove(cloudGroup.children[0]);
-      for(const c of clouds){
-        const pts=c.points||[]; if(!pts.length) continue;
-        const arr=new Float32Array(pts.length*3);
-        for(let i=0;i<pts.length;i++){arr[3*i]=pts[i][0];arr[3*i+1]=pts[i][1];arr[3*i+2]=pts[i][2];}
-        const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(arr,3));
-        cloudGroup.add(new THREE.Points(g,new THREE.PointsMaterial({size:0.01,color:0x4dbbff})));
+    function clearGroup(group){
+      while(group.children.length) group.remove(group.children[0]);
+    }
+    function addPointsToGroup(group, pts, size, fallbackHex){
+      if(!pts || !pts.length) return;
+      const arr=new Float32Array(pts.length*3);
+      const hasColor = pts[0].length >= 6;
+      const col = hasColor ? new Float32Array(pts.length*3) : null;
+      for(let i=0;i<pts.length;i++){
+        arr[3*i]=pts[i][0];arr[3*i+1]=pts[i][1];arr[3*i+2]=pts[i][2];
+        if(hasColor){
+          col[3*i]=Math.max(0,Math.min(255,pts[i][3]))/255.0;
+          col[3*i+1]=Math.max(0,Math.min(255,pts[i][4]))/255.0;
+          col[3*i+2]=Math.max(0,Math.min(255,pts[i][5]))/255.0;
+        }
+      }
+      const g=new THREE.BufferGeometry();
+      g.setAttribute('position',new THREE.BufferAttribute(arr,3));
+      if(hasColor){
+        g.setAttribute('color',new THREE.BufferAttribute(col,3));
+      }
+      group.add(new THREE.Points(
+        g,
+        new THREE.PointsMaterial({size:size,color:fallbackHex,vertexColors:hasColor})
+      ));
+    }
+    function setEsdfPoints(pts, voxelSizeM){
+      clearGroup(esdfGroup);
+      const points = pts || [];
+      if(!points.length) return;
+      const cubeSize = Math.max(0.02, (voxelSizeM || 0.1) * 1.2);
+      const geom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+      for(let i=0;i<points.length;i++){
+        const p = points[i];
+        const r = (p.length >= 6 ? Math.max(0,Math.min(255,p[3])) : 102) / 255.0;
+        const g = (p.length >= 6 ? Math.max(0,Math.min(255,p[4])) : 204) / 255.0;
+        const b = (p.length >= 6 ? Math.max(0,Math.min(255,p[5])) : 255) / 255.0;
+        const mat = new THREE.MeshBasicMaterial({
+          color:new THREE.Color(r,g,b),
+        });
+        const cube = new THREE.Mesh(geom, mat);
+        cube.position.set(p[0], p[1], p[2]);
+        esdfGroup.add(cube);
       }
     }
 
@@ -111,8 +148,10 @@
         const p=d.pose||{tx:0,ty:0,tz:0};
         poseEl.textContent=`pose: (${p.tx.toFixed(3)}, ${p.ty.toFixed(3)}, ${p.tz.toFixed(3)})`;
         scaleEl.textContent=d.scale_text||'scale: n/a';
+        const v=d.voxblox||{};
+        voxEl.textContent=`voxblox: ${v.enabled?'on':'off'} frames=${v.integrated_frames||0} tsdf=${v.tsdf_count||0} esdf=${v.esdf_count||0}`;
         setTraj(d.trajectory||[]);
-        setClouds(d.depth_clouds||[]);
+        setEsdfPoints(d.esdf_points||[], v.voxel_size_m||0.1);
       };
     }
     connectWs();

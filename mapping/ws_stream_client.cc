@@ -10,6 +10,7 @@
 #include "mapping/common/utils.h"
 #include "mapping/da3/da3_onnx_runner.h"
 #include "mapping/da3/render_overlay.h"
+#include "mapping/voxblox/voxblox_processor.h"
 
 #include <Eigen/Geometry>
 #include <gflags/gflags.h>
@@ -46,6 +47,28 @@ DEFINE_int32(da3_width, 392, "DA3 model input width.");
 DEFINE_int32(da3_height, 224, "DA3 model input height.");
 DEFINE_double(da3_scale_refine_depth_max_m, 2.0,
               "Max depth (meters) used in DA3 overlap-scale refinement.");
+DEFINE_bool(enable_voxblox, false, "Enable Voxblox TSDF/ESDF integration from latest DA3 RGBD.");
+DEFINE_double(voxblox_voxel_size_m, 0.1, "Voxblox voxel size in meters.");
+DEFINE_int32(voxblox_voxels_per_side, 16, "Voxblox voxels per block side.");
+DEFINE_double(voxblox_truncation_distance_m, 0.2, "Voxblox TSDF truncation distance.");
+DEFINE_double(voxblox_min_ray_length_m, 0.1, "Voxblox minimum ray length.");
+DEFINE_double(voxblox_max_ray_length_m, 5.0, "Voxblox maximum ray length.");
+DEFINE_double(voxblox_max_depth_m, 5.0, "Voxblox max accepted input depth.");
+DEFINE_int32(voxblox_pixel_step, 4, "Pixel stride for Voxblox integration.");
+DEFINE_double(voxblox_esdf_max_distance_m, 2.0, "Voxblox ESDF max distance.");
+DEFINE_bool(voxblox_esdf_show_free, false, "Include free/unobserved voxels in ESDF export.");
+DEFINE_bool(voxblox_esdf_only_occupied, true, "Export only occupied ESDF voxels (distance <= 0).");
+DEFINE_bool(voxblox_esdf_use_slice, false, "Export ESDF on a single slice plane.");
+DEFINE_int32(voxblox_esdf_slice_axis, 2, "ESDF slice axis: 0=x,1=y,2=z.");
+DEFINE_double(voxblox_esdf_slice_level_m, 0.0, "ESDF slice plane coordinate.");
+DEFINE_int32(voxblox_esdf_full_update_every_n, 20,
+             "Run ESDF batch/full update every N integrated frames (<=0 disables).");
+DEFINE_double(voxblox_tsdf_surface_band_m, 0.08, "TSDF viz uses |distance| below this band.");
+DEFINE_double(voxblox_tsdf_min_weight, 1.0, "Minimum TSDF weight for visualization.");
+DEFINE_double(voxblox_esdf_vis_distance_m, 1.0, "Only visualize ESDF voxels within this distance.");
+DEFINE_int32(voxblox_viz_voxel_step, 2, "Voxel stride when extracting TSDF/ESDF visualization.");
+DEFINE_int32(voxblox_max_tsdf_points, 12000, "Max TSDF points sent to web viewer.");
+DEFINE_int32(voxblox_max_esdf_points, 12000, "Max ESDF points sent to web viewer.");
 DEFINE_double(keyframe_rot_deg, 6.0, "Keyframe threshold: rotation delta in degrees.");
 DEFINE_double(keyframe_trans_m, 0.12, "Keyframe threshold: translation delta in meters.");
 DEFINE_bool(enable_websocket, true, "Enable websocket stream server.");
@@ -88,6 +111,7 @@ int main(int argc, char** argv) {
   }
 
   std::unique_ptr<da3client::Da3Worker> da3_worker;
+  std::unique_ptr<mapping::VoxbloxProcessor> voxblox_processor;
   std::unique_ptr<vlpweb::SimpleWebsocketServer> web_server;
   {
     auto runner =
@@ -98,6 +122,32 @@ int main(int argc, char** argv) {
       da3_worker = std::make_unique<da3client::Da3Worker>(
           std::move(runner), static_cast<float>(FLAGS_da3_scale_refine_depth_max_m));
       LOG(INFO) << "[DA3] worker started.";
+
+      if (FLAGS_enable_voxblox) {
+        mapping::VoxbloxProcessor::Config cfg;
+        cfg.voxel_size_m = static_cast<float>(FLAGS_voxblox_voxel_size_m);
+        cfg.voxels_per_side = FLAGS_voxblox_voxels_per_side;
+        cfg.truncation_distance_m = static_cast<float>(FLAGS_voxblox_truncation_distance_m);
+        cfg.min_ray_length_m = static_cast<float>(FLAGS_voxblox_min_ray_length_m);
+        cfg.max_ray_length_m = static_cast<float>(FLAGS_voxblox_max_ray_length_m);
+        cfg.max_depth_m = static_cast<float>(FLAGS_voxblox_max_depth_m);
+        cfg.pixel_step = FLAGS_voxblox_pixel_step;
+        cfg.esdf_max_distance_m = static_cast<float>(FLAGS_voxblox_esdf_max_distance_m);
+        cfg.esdf_show_free = FLAGS_voxblox_esdf_show_free;
+        cfg.esdf_only_occupied = FLAGS_voxblox_esdf_only_occupied;
+        cfg.esdf_use_slice = FLAGS_voxblox_esdf_use_slice;
+        cfg.esdf_slice_axis = FLAGS_voxblox_esdf_slice_axis;
+        cfg.esdf_slice_level_m = static_cast<float>(FLAGS_voxblox_esdf_slice_level_m);
+        cfg.esdf_full_update_every_n = FLAGS_voxblox_esdf_full_update_every_n;
+        cfg.tsdf_surface_band_m = static_cast<float>(FLAGS_voxblox_tsdf_surface_band_m);
+        cfg.tsdf_min_weight = static_cast<float>(FLAGS_voxblox_tsdf_min_weight);
+        cfg.esdf_vis_distance_m = static_cast<float>(FLAGS_voxblox_esdf_vis_distance_m);
+        cfg.viz_voxel_step = FLAGS_voxblox_viz_voxel_step;
+        cfg.max_tsdf_viz_points = FLAGS_voxblox_max_tsdf_points;
+        cfg.max_esdf_viz_points = FLAGS_voxblox_max_esdf_points;
+        voxblox_processor = std::make_unique<mapping::VoxbloxProcessor>(cfg);
+        LOG(INFO) << "[Voxblox] enabled.";
+      }
     }
   }
 
@@ -126,6 +176,8 @@ int main(int argc, char** argv) {
       da3_worker ? "DA3: waiting for first keyframe pair" : "DA3: disabled";
   std::deque<std::array<float, 3>> trajectory;
   std::deque<std::pair<std::string, std::vector<std::array<float, 3>>>> recent_clouds;
+  // std::vector<mapping::VoxbloxProcessor::VizPoint> tsdf_viz_points;
+  std::vector<mapping::VoxbloxProcessor::VizPoint> esdf_viz_points;
   std::string last_cloud_pair;
   auto last_web_send = std::chrono::steady_clock::now();
 
@@ -229,6 +281,18 @@ int main(int argc, char** argv) {
     if (da3_worker) {
       auto out = da3_worker->GetLatestOutput();
       if (out.has_value() && !out->depth_metric.empty() && out->pair_label != last_cloud_pair) {
+        if (voxblox_processor) {
+          const bool ok_voxblox =
+              voxblox_processor->Integrate(out->depth_metric, out->pose, out->fx, out->fy,
+                                           out->cx, out->cy);
+          if (!ok_voxblox) {
+            LOG_EVERY_N(INFO, 30) << "[Voxblox] skip integrate for " << out->pair_label;
+          } else {
+            // voxblox_processor->GetTsdfVisualization(&tsdf_viz_points);
+            voxblox_processor->GetEsdfVisualization(&esdf_viz_points);
+          }
+        }
+
         const int step = std::max(1, FLAGS_web_depth_step);
         const Sophus::SE3d T_w_c = vlputil::PoseToSE3d(out->pose);
         const Eigen::Matrix3d R = T_w_c.so3().matrix();
@@ -274,6 +338,10 @@ int main(int argc, char** argv) {
         last_cloud_pair = out->pair_label;
       }
     }
+    // if (voxblox_processor) {
+    //   voxblox_processor->GetTsdfVisualization(&tsdf_viz_points);
+    //   voxblox_processor->GetEsdfVisualization(&esdf_viz_points);
+    // }
 
     if (web_server) {
       const auto now_send = std::chrono::steady_clock::now();
@@ -298,6 +366,13 @@ int main(int argc, char** argv) {
           << ",\"tz\":" << packet.pose.translation().z() << "},";
       oss << "\"scale_text\":\"" << vlputil::JsonEscape(latest_scale_text) << "\",";
       oss << "\"da3_status\":\"" << vlputil::JsonEscape(latest_da3_status) << "\",";
+      oss << "\"voxblox\":{"
+          << "\"enabled\":" << (voxblox_processor ? "true" : "false") << ","
+          << "\"integrated_frames\":"
+          << (voxblox_processor ? voxblox_processor->IntegratedFrameCount() : 0) << ","
+          << "\"voxel_size_m\":" << (voxblox_processor ? FLAGS_voxblox_voxel_size_m : 0.0) << ","
+          // << "\"tsdf_count\":" << tsdf_viz_points.size() << ","
+          << "\"esdf_count\":" << esdf_viz_points.size() << "},";
       oss << "\"trajectory\":[";
       size_t begin_idx = 0;
       if (static_cast<int>(trajectory.size()) > FLAGS_web_max_traj_points) {
@@ -318,6 +393,20 @@ int main(int argc, char** argv) {
           oss << "[" << pts[j][0] << "," << pts[j][1] << "," << pts[j][2] << "]";
         }
         oss << "]}";
+      }
+      // oss << "],\"tsdf_points\":[";
+      // for (size_t i = 0; i < tsdf_viz_points.size(); ++i) {
+      //   if (i) oss << ",";
+      //   const auto& p = tsdf_viz_points[i];
+      //   oss << "[" << p.x << "," << p.y << "," << p.z << "," << p.r << "," << p.g << ","
+      //       << p.b << "]";
+      // }
+      oss << "],\"esdf_points\":[";
+      for (size_t i = 0; i < esdf_viz_points.size(); ++i) {
+        if (i) oss << ",";
+        const auto& p = esdf_viz_points[i];
+        oss << "[" << p.x << "," << p.y << "," << p.z << "," << p.r << "," << p.g << ","
+            << p.b << "]";
       }
       oss << "]}";
       web_server->BroadcastText(oss.str());
