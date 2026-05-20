@@ -73,8 +73,8 @@ cv::Mat NchwToHwcMat(const std::vector<float>& nchw, int h, int w) {
   return hwc;
 }
 
-std::optional<double> RobustMedianScale(const cv::Mat& ref_depth, const cv::Mat& query_depth,
-                                        int step = 4) {
+std::optional<double> MeanRatioScale(const cv::Mat& ref_depth, const cv::Mat& query_depth,
+                                     int step = 4) {
   if (ref_depth.empty() || query_depth.empty() || ref_depth.type() != CV_32F ||
       query_depth.type() != CV_32F) {
     return std::nullopt;
@@ -106,13 +106,15 @@ std::optional<double> RobustMedianScale(const cv::Mat& ref_depth, const cv::Mat&
   if (ratios.size() < 64) {
     return std::nullopt;
   }
-  auto mid = ratios.begin() + static_cast<std::ptrdiff_t>(ratios.size() / 2);
-  std::nth_element(ratios.begin(), mid, ratios.end());
-  const double med = static_cast<double>(*mid);
-  if (!std::isfinite(med) || med <= 0.0) {
+  double sum = 0.0;
+  for (const float r : ratios) {
+    sum += static_cast<double>(r);
+  }
+  const double mean = sum / static_cast<double>(ratios.size());
+  if (!std::isfinite(mean) || mean <= 0.0) {
     return std::nullopt;
   }
-  return med;
+  return mean;
 }
 
 }  // namespace
@@ -554,7 +556,7 @@ void Da3Worker::ThreadMain() {
         !last_pair_cache_->depth_b_rel.empty() &&
         !out.depth_a_rel.empty()) {
       const std::optional<double> overlap_scale =
-          RobustMedianScale(last_pair_cache_->depth_b_rel, out.depth_a_rel);
+          MeanRatioScale(last_pair_cache_->depth_b_rel, out.depth_a_rel);
       if (overlap_scale.has_value() && std::isfinite(*overlap_scale)) {
         chained_world_scale_ *= *overlap_scale;
         pair_chain_scale = *overlap_scale;
