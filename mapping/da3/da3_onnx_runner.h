@@ -63,7 +63,8 @@ class Da3OnnxRunner {
 
 class Da3Worker {
  public:
-  explicit Da3Worker(std::unique_ptr<Da3OnnxRunner> runner);
+  explicit Da3Worker(std::unique_ptr<Da3OnnxRunner> runner,
+                     float scale_refine_depth_max_m = 2.0f);
   ~Da3Worker();
 
   Da3Worker(const Da3Worker&) = delete;
@@ -94,6 +95,7 @@ class Da3Worker {
 
   std::optional<Da3Output> latest_output_;
   std::optional<OverlapCache> last_pair_cache_;
+  float scale_refine_depth_max_m_ = 2.0f;
   double chained_world_scale_ = 1.0;
   std::string last_status_;
   bool stop_ = false;
