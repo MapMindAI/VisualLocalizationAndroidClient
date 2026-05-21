@@ -22,6 +22,7 @@
         <div id="pose">pose: (0,0,0)</div>
         <div id="scale">scale: n/a</div>
         <div id="vox">voxblox: off</div>
+        <div id="cloud">cloud: 0</div>
         <div>
           <label for="esdfColorMode">ESDF Color:</label>
           <select id="esdfColorMode">
@@ -55,6 +56,7 @@
     const poseEl = document.getElementById('pose');
     const scaleEl = document.getElementById('scale');
     const voxEl = document.getElementById('vox');
+    const cloudEl = document.getElementById('cloud');
     const esdfColorModeEl = document.getElementById('esdfColorMode');
     const followCamEl = document.getElementById('followCam');
 
@@ -77,6 +79,7 @@
     const posePt = new THREE.Mesh(new THREE.SphereGeometry(0.03,12,12), new THREE.MeshBasicMaterial({color:0x66ff66}));
     scene.add(posePt);
     const esdfGroup = new THREE.Group(); scene.add(esdfGroup);
+    let depthCloudObj = null;
     let latestPose = {x:0,y:0,z:0};
     let prevPose = {x:0,y:0,z:0};
     let wasFollowEnabled = false;
@@ -181,6 +184,36 @@
       }
     }
 
+    function setDepthCloudPoints(pts){
+      if(depthCloudObj){
+        scene.remove(depthCloudObj);
+        depthCloudObj.geometry.dispose();
+        depthCloudObj.material.dispose();
+        depthCloudObj = null;
+      }
+      const points = pts || [];
+      if(!points.length) return;
+      const pos = new Float32Array(points.length * 3);
+      const col = new Float32Array(points.length * 3);
+      for(let i=0;i<points.length;i++){
+        const p = points[i];
+        pos[3*i] = p[0]; pos[3*i+1] = p[1]; pos[3*i+2] = p[2];
+        col[3*i] = (p.length >= 6 ? p[3] : 180) / 255.0;
+        col[3*i+1] = (p.length >= 6 ? p[4] : 180) / 255.0;
+        col[3*i+2] = (p.length >= 6 ? p[5] : 180) / 255.0;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const mat = new THREE.PointsMaterial({
+        size:0.02,
+        vertexColors:true,
+      });
+      depthCloudObj = new THREE.Points(geom, mat);
+      scene.add(depthCloudObj);
+      cloudEl.textContent = `cloud: ${points.length}`;
+    }
+
     let ws = null;
     let reconnectTimer = null;
     function connectWs(){
@@ -202,6 +235,11 @@
         const v=d.voxblox||{};
         voxEl.textContent=`voxblox: ${v.enabled?'on':'off'} frames=${v.integrated_frames||0} tsdf=${v.tsdf_count||0} esdf=${v.esdf_count||0}`;
         setTraj(d.trajectory||[]);
+        if (Object.prototype.hasOwnProperty.call(d, 'depth_clouds')) {
+          setDepthCloudPoints(d.depth_clouds || []);
+        } else {
+          cloudEl.textContent = 'cloud: n/a';
+        }
         if (Object.prototype.hasOwnProperty.call(d, 'esdf_points')) {
           setEsdfPoints(d.esdf_points || [], v.voxel_size_m || 0.1);
         }
