@@ -1,6 +1,2 @@
 dependencies:
   idf: '>=5.5'
-  robot_canbus:
-    version: '*'
-    override_path: /MobiliMOKUKU/submodules/robot_canbus
-    pre_release: true

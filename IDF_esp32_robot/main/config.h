@@ -19,3 +19,6 @@
 #define LED_PIN GPIO_NUM_2
 #define LED_LIGHT_OFF 0
 #define LED_LIGHT_ON 1
+
+// 0: disable UART motor console (default), 1: enable for manual motor test.
+#define ENABLE_UART_MOTOR_CONSOLE 0
