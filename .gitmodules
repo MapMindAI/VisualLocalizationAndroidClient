@@ -1,0 +1,3 @@
+[submodule "IDF_esp32_robot"]
+	path = IDF_esp32_robot
+	url = https://github.com/MapMindAI/ESP32-ROBOT-Control
