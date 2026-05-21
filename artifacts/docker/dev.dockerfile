@@ -82,7 +82,7 @@ RUN bash /tmp/installers/bazel.sh && rm /tmp/installers/bazel.sh
 
 COPY installers/android.sh /tmp/installers/
 ENV ANDROID_HOME /opt/android-sdk
-ENV ANDROID_NDK_VERSION 25.1.8937393
+ENV ANDROID_NDK_VERSION 26.1.10909125
 ENV ANDROID_NDK_HOME $ANDROID_HOME/ndk/$ANDROID_NDK_VERSION
 RUN bash /tmp/installers/android.sh && rm /tmp/installers/android.sh
 ENV PATH $PATH:$ANDROID_HOME/cmdline-tools/bin:$ANDROID_HOME/platform-tools
