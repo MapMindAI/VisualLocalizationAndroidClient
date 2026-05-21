@@ -97,8 +97,6 @@ class HelloArApplication {
   bool hasLatestStreamFrame() const;
   std::vector<uint8_t> getLatestGrayImage() const;
   std::vector<uint8_t> getLatestYuvNv21Image() const;
-  std::vector<uint8_t> getLatestDepth16Image() const;
-  void getLatestDepthMetadata(int64_t* timestamp_ns, int* width, int* height) const;
   void getLatestStreamMetadata(int64_t* timestamp_ns, int* width, int* height,
                                float* fx, float* fy, float* cx, float* cy,
                                float* qx, float* qy, float* qz, float* qw,

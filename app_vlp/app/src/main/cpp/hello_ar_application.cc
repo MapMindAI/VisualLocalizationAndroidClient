@@ -271,17 +271,6 @@ std::vector<uint8_t> HelloArApplication::getLatestYuvNv21Image() const {
   return latest_yuv_nv21_image_;
 }
 
-std::vector<uint8_t> HelloArApplication::getLatestDepth16Image() const {
-  return {};
-}
-
-void HelloArApplication::getLatestDepthMetadata(
-    int64_t* timestamp_ns, int* width, int* height) const {
-  if (timestamp_ns != nullptr) *timestamp_ns = 0;
-  if (width != nullptr) *width = 0;
-  if (height != nullptr) *height = 0;
-}
-
 void HelloArApplication::getLatestStreamMetadata(
     int64_t* timestamp_ns, int* width, int* height, float* fx, float* fy,
     float* cx, float* cy, float* qx, float* qy, float* qz, float* qw,
