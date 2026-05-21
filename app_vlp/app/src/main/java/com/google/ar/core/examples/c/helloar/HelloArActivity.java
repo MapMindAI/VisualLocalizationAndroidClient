@@ -250,7 +250,7 @@ public class HelloArActivity extends AppCompatActivity
           }
         }
         Log.i("Mobili", "Create directory: " + record_folder);
-        String recordFile = new File(recordFolder, "vlp_stream_vlp3.rec").getAbsolutePath();
+        String recordFile = new File(recordFolder, "vlp_stream.rec").getAbsolutePath();
         boolean ok = grpcFrameStreamServer != null && grpcFrameStreamServer.startRecording(recordFile);
         displayInSnackbar(ok ? ("Start Recording " + recordFile) : "Start Recording failed");
       }

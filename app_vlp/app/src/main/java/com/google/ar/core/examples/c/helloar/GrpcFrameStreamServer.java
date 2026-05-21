@@ -26,10 +26,7 @@ class GrpcFrameStreamServer {
   private static final String TAG = "GrpcFrameStreamServer";
   private static final String SERVICE_NAME = "vlp.FrameStreamService";
   private static final int FRAME_HEADER_MAGIC = 0x564c5032; // "VLP2"
-  private static final int RECORD_FRAME_MAGIC = 0x564c5033; // "VLP3"
   private static final int FRAME_HEADER_SIZE = 64;
-  private static final int EXT_HEADER_SIZE = 20; // jpeg_len, depth_w, depth_h, depth_fmt, depth_len
-  private static final int DEPTH_FORMAT_U16_MM = 1;
   private static final byte[] RECORD_FILE_MAGIC = new byte[] {'V', 'L', 'P', 'R', 'E', 'C', '1', '\n'};
   private static final int RECORD_FILE_VERSION = 1;
   private static final int RECORD_ENTRY_HEADER_SIZE = 12; // <QI>
@@ -226,14 +223,8 @@ class GrpcFrameStreamServer {
     }
 
     byte[] yuvNv21 = JniInterface.getLatestYuvNv21Image(nativeApplication);
-    byte[] depth16 = null;
     long[] dimensionsAndTimestamp =
         JniInterface.getLatestStreamDimensionsAndTimestamp(nativeApplication);
-    long[] depthDimsAndTimestamp = null;
-    if (recordingEnabled) {
-      depth16 = JniInterface.getLatestDepth16Image(nativeApplication);
-      depthDimsAndTimestamp = JniInterface.getLatestDepthDimensionsAndTimestamp(nativeApplication);
-    }
     float[] intrinsics = JniInterface.getLatestStreamIntrinsics(nativeApplication);
     float[] pose = JniInterface.getLatestStreamPose(nativeApplication);
 
@@ -303,48 +294,7 @@ class GrpcFrameStreamServer {
     byte[] payload = buffer.array();
 
     if (recordingEnabled) {
-      int depthWidth = 0;
-      int depthHeight = 0;
-      int depthLen = 0;
-      if (depth16 != null && depthDimsAndTimestamp != null && depthDimsAndTimestamp.length >= 3) {
-        depthWidth = (int) depthDimsAndTimestamp[1];
-        depthHeight = (int) depthDimsAndTimestamp[2];
-        depthLen = depth16.length;
-        if (depthWidth <= 0 || depthHeight <= 0 || depthLen <= 0) {
-          depthWidth = 0;
-          depthHeight = 0;
-          depthLen = 0;
-        }
-      }
-
-      ByteBuffer recordBuffer =
-          ByteBuffer.allocate(FRAME_HEADER_SIZE + EXT_HEADER_SIZE + jpegBytes.length + depthLen)
-              .order(ByteOrder.LITTLE_ENDIAN);
-      recordBuffer.putInt(RECORD_FRAME_MAGIC);
-      recordBuffer.putLong(timestampNs);
-      recordBuffer.putInt(width);
-      recordBuffer.putInt(height);
-      recordBuffer.putFloat(intrinsics[0]);
-      recordBuffer.putFloat(intrinsics[1]);
-      recordBuffer.putFloat(intrinsics[2]);
-      recordBuffer.putFloat(intrinsics[3]);
-      recordBuffer.putFloat(pose[0]);
-      recordBuffer.putFloat(pose[1]);
-      recordBuffer.putFloat(pose[2]);
-      recordBuffer.putFloat(pose[3]);
-      recordBuffer.putFloat(pose[4]);
-      recordBuffer.putFloat(pose[5]);
-      recordBuffer.putFloat(pose[6]);
-      recordBuffer.putInt(jpegBytes.length);
-      recordBuffer.putInt(depthWidth);
-      recordBuffer.putInt(depthHeight);
-      recordBuffer.putInt(depthLen > 0 ? DEPTH_FORMAT_U16_MM : 0);
-      recordBuffer.putInt(depthLen);
-      recordBuffer.put(jpegBytes);
-      if (depthLen > 0) {
-        recordBuffer.put(depth16, 0, depthLen);
-      }
-      appendRecordFrame(timestampNs, recordBuffer.array());
+      appendRecordFrame(timestampNs, payload);
     }
 
     Iterator<ServerCallStreamObserver<byte[]>> iter = subscribers.iterator();
