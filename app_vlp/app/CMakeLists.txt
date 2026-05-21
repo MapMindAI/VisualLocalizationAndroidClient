@@ -35,6 +35,10 @@ add_library(opencv SHARED IMPORTED)
 set_target_properties(opencv PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/opencv/lib/${ANDROID_ABI}/libopencv_java4.so)
 
 include_directories(${CMAKE_SOURCE_DIR}/../../libs)
+include_directories(${CMAKE_SOURCE_DIR}/../../libs/mnn/include)
+
+add_library(MNN SHARED IMPORTED)
+set_target_properties(MNN PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mnn/lib/${ANDROID_ABI}/libMNN.so)
 
 option(ENABLE_MOBILI_VLP "Enable linking and usage of mobili::vlp library" OFF)
 if(ENABLE_MOBILI_VLP)
@@ -47,6 +51,7 @@ endif()
 # This is the main app library.
 add_library(hello_ar_native SHARED
            src/main/cpp/background_renderer.cc
+           src/main/cpp/da2_pipeline.cc
            src/main/cpp/hello_ar_application.cc
            src/main/cpp/jni_interface.cc
            src/main/cpp/obj_renderer.cc
@@ -66,7 +71,8 @@ target_link_libraries(hello_ar_native
                       GLESv2
                       glm
                       arcore
-                      opencv)
+                      opencv
+                      MNN)
 
 if(ENABLE_MOBILI_VLP)
   target_link_libraries(hello_ar_native mobili_vlp_api)

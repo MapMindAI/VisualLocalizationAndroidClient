@@ -101,14 +101,13 @@ http://127.0.0.1:9002/index.html
 
 ## Replay recorded stream with DA2 depth
 
-Replay a recorded `vlp_stream_vlp3.rec`; depth/PCL are computed from DA2 on RGB (recorded depth is ignored):
+Replay a recorded `vlp_stream.rec`; depth/PCL are computed from DA2 on RGB:
 
 ```bash
 python3 python/grpc_stream_da2_depth.py \
-  --input data/vlp_stream_vlp3.rec --no-display \
+  --input data/vlp_stream.rec --no-display \
   --model python/models/depth_anything_v2_metric_vits.onnx \
   --providers CPUExecutionProvider \
-  --output-mp4 data/replay.mp4 \
   --mp4-fps 20
   --websocket-port 9002 \
   --pc-recent-n 8 \

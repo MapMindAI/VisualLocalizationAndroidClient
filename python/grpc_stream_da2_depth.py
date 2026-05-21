@@ -24,7 +24,6 @@ FRAME_MAGIC_VLP3 = 0x564C5033
 FRAME_HEADER_STRUCT = struct.Struct("<IQII11f")
 FRAME_HEADER_SIZE = FRAME_HEADER_STRUCT.size  # 64
 EXT_HEADER_STRUCT = struct.Struct("<IIIII")
-DEPTH_FMT_U16_MM = 1
 
 FILE_MAGIC = b"VLPREC1\n"
 FILE_VERSION = 1
@@ -43,7 +42,8 @@ def load_da2(model_path: str, providers: str, fallback_h: int, fallback_w: int):
 
 
 def run_da2_depth(session: ort.InferenceSession, bgr: np.ndarray, in_w: int, in_h: int) -> np.ndarray:
-    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    rgb = cv2.cvtColor(rgb, cv2.COLOR_GRAY2BGR)
     resized = cv2.resize(rgb, (in_w, in_h), interpolation=cv2.INTER_LINEAR)
     image = np.transpose(resized.astype(np.float32) / 255.0, (2, 0, 1))[None, ...]
     depth = session.run(["depth"], {"image": image})[0][0]
@@ -273,23 +273,16 @@ def parse_payload(payload: bytes):
             "ty": ty,
             "tz": tz,
             "jpeg": jpeg,
-            "depth": None,
         }
 
     if magic == FRAME_MAGIC_VLP3:
         if len(payload) < FRAME_HEADER_SIZE + EXT_HEADER_STRUCT.size:
             return None
-        jpeg_len, dw, dh, dformat, dlen = EXT_HEADER_STRUCT.unpack_from(payload, FRAME_HEADER_SIZE)
+        jpeg_len, _, _, _, _ = EXT_HEADER_STRUCT.unpack_from(payload, FRAME_HEADER_SIZE)
         off = FRAME_HEADER_SIZE + EXT_HEADER_STRUCT.size
         if off + jpeg_len > len(payload):
             return None
         jpeg = payload[off : off + jpeg_len]
-        depth = None
-        if dformat == DEPTH_FMT_U16_MM and dlen > 0 and off + jpeg_len + dlen <= len(payload):
-            db = payload[off + jpeg_len : off + jpeg_len + dlen]
-            arr = np.frombuffer(db, dtype="<u2")
-            if dw > 0 and dh > 0 and arr.size >= dw * dh:
-                depth = arr[: dw * dh].reshape((dh, dw)).astype(np.float32) * 0.001
         return {
             "magic": magic,
             "timestamp_ns": ts,
@@ -307,7 +300,6 @@ def parse_payload(payload: bytes):
             "ty": ty,
             "tz": tz,
             "jpeg": jpeg,
-            "depth": depth,
         }
 
     return None
@@ -361,33 +353,12 @@ def run_once(
         depth_full = cv2.resize(da2_depth, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR)
         depth_full *= max(1e-6, float(args.da2_depth_scale))
 
-        grpc_depth = p["depth"]
-        grpc_depth_min = 0.0
-        grpc_depth_max = 0.0
-        if grpc_depth is not None:
-            grpc_depth_full = cv2.resize(grpc_depth, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR)
-            grpc_depth_vis = to_depth_vis(grpc_depth_full)
-            grpc_depth_min = float(np.min(grpc_depth_full))
-            grpc_depth_max = float(np.max(grpc_depth_full))
-        else:
-            grpc_depth_vis = np.zeros_like(img)
-
-        panel = np.concatenate([img, grpc_depth_vis, da2_depth_vis], axis=1)
+        panel = np.concatenate([img, da2_depth_vis], axis=1)
         cv2.putText(panel, "RGB", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(
             panel,
-            "ARCore depth",
-            (img.shape[1] + 10, 24),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
-        cv2.putText(
-            panel,
             "DA depth",
-            (img.shape[1] * 2 + 10, 24),
+            (img.shape[1] + 10, 24),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.65,
             (255, 255, 255),
@@ -469,10 +440,7 @@ def run_once(
                     "fps": fps,
                     "pose": {"tx": tx, "ty": ty, "tz": tz},
                     "scale_text": f"DA2 depth x{args.da2_depth_scale:.3f}",
-                    "da3_status": (
-                        f"arcore_depth=[{grpc_depth_min:.3f},{grpc_depth_max:.3f}] "
-                        f"da2_depth=[{dmin:.3f},{dmax:.3f}] infer={infer_ms:.1f}ms"
-                    ),
+                    "da3_status": f"da2_depth=[{dmin:.3f},{dmax:.3f}] infer={infer_ms:.1f}ms",
                     "voxblox": {
                         "enabled": False,
                         "integrated_frames": 0,

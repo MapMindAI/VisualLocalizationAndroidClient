@@ -45,6 +45,7 @@
 
 
 namespace hello_ar {
+class Da2Pipeline;
 
 // HelloArApplication handles all application logics.
 class HelloArApplication {
@@ -97,7 +98,7 @@ class HelloArApplication {
   bool hasLatestStreamFrame() const;
   std::vector<uint8_t> getLatestGrayImage() const;
   std::vector<uint8_t> getLatestYuvNv21Image() const;
-  void getLatestStreamMetadata(int64_t* timestamp_ns, int* width, int* height,
+ void getLatestStreamMetadata(int64_t* timestamp_ns, int* width, int* height,
                                float* fx, float* fy, float* cx, float* cy,
                                float* qx, float* qy, float* qz, float* qw,
                                float* tx, float* ty, float* tz) const;
@@ -142,6 +143,9 @@ class HelloArApplication {
   void ConfigureSession();
 
   void UpdateAnchorColor(ColoredAnchor* colored_anchor);
+  void InitializeDa2OverlayGl();
+  void UpdateDa2OverlayTexture();
+  void DrawDa2Overlay();
 
   bool publishing_ = false;
   ArCameraIntrinsics *camera_intrinsics_;
@@ -166,6 +170,18 @@ class HelloArApplication {
   bool has_latest_stream_frame_ = false;
   bool render_enabled_ = true;
   bool stream_consumer_active_ = false;
+
+  std::unique_ptr<Da2Pipeline> da2_pipeline_;
+  GLuint da2_overlay_texture_id_ = 0;
+  GLuint da2_overlay_program_ = 0;
+  GLint da2_overlay_texture_uniform_ = -1;
+  GLint da2_overlay_position_attrib_ = -1;
+  GLint da2_overlay_tex_coord_attrib_ = -1;
+  int da2_overlay_width_ = 0;
+  int da2_overlay_height_ = 0;
+  int64_t da2_overlay_uploaded_timestamp_ns_ = 0;
+  std::vector<GLfloat> da2_overlay_vertices_;
+  std::vector<GLfloat> da2_overlay_uvs_;
 };
 }  // namespace hello_ar
 

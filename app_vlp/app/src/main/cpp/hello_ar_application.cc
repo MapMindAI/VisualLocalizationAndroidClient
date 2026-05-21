@@ -23,6 +23,7 @@
 #include <cstring>
 
 #include "arcore_c_api.h"
+#include "da2_pipeline.h"
 #include "plane_renderer.h"
 #include "util.h"
 
@@ -46,6 +47,9 @@ const glm::vec3 kWhite = {255, 255, 255};
 // likely be standing and trying to place an object on the ground or floor
 // in front of them.
 constexpr float kApproximateDistanceMeters = 1.0f;
+constexpr char kDa2OverlayVertexShaderFilename[] = "shaders/screenquad.vert";
+constexpr char kDa2OverlayFragmentShaderFilename[] =
+    "shaders/screenquad_rgb2d.frag";
 
 void SetColor(float r, float g, float b, float a, float* color4f) {
   color4f[0] = r;
@@ -55,6 +59,7 @@ void SetColor(float r, float g, float b, float a, float* color4f) {
 }
 
 }  // namespace
+
 
 HelloArApplication::HelloArApplication(AAssetManager* asset_manager)
     : asset_manager_(asset_manager) {
@@ -74,9 +79,19 @@ HelloArApplication::HelloArApplication(AAssetManager* asset_manager)
 #else
   LOGI("mobili::vlp disabled (HELLO_AR_ENABLE_MOBILI_VLP=0)");
 #endif
+
+  da2_pipeline_.reset(new Da2Pipeline(asset_manager_));
 }
 
 HelloArApplication::~HelloArApplication() {
+  if (da2_overlay_texture_id_ != 0) {
+    glDeleteTextures(1, &da2_overlay_texture_id_);
+    da2_overlay_texture_id_ = 0;
+  }
+  if (da2_overlay_program_ != 0) {
+    glDeleteProgram(da2_overlay_program_);
+    da2_overlay_program_ = 0;
+  }
   if (ar_session_ != nullptr) {
     ArSession_destroy(ar_session_);
     ArFrame_destroy(ar_frame_);
@@ -158,6 +173,7 @@ void HelloArApplication::OnSurfaceCreated() {
 #endif // #if HELLO_AR_ENABLE_MOBILI_VLP
 
   plane_renderer_.InitializeGlContent(asset_manager_);
+  InitializeDa2OverlayGl();
 }
 
 void HelloArApplication::OnDisplayGeometryChanged(int display_rotation,
@@ -172,6 +188,117 @@ void HelloArApplication::OnDisplayGeometryChanged(int display_rotation,
   }
 
   ArCameraIntrinsics_create(ar_session_, &camera_intrinsics_);
+}
+
+void HelloArApplication::InitializeDa2OverlayGl() {
+  if (da2_overlay_texture_id_ == 0) {
+    glGenTextures(1, &da2_overlay_texture_id_);
+    glBindTexture(GL_TEXTURE_2D, da2_overlay_texture_id_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  }
+
+  if (da2_overlay_program_ == 0) {
+    da2_overlay_program_ = util::CreateProgram(
+        kDa2OverlayVertexShaderFilename, kDa2OverlayFragmentShaderFilename,
+        asset_manager_);
+    if (da2_overlay_program_ == 0) {
+      LOGE("Failed to create DA2 overlay program.");
+      return;
+    }
+    da2_overlay_texture_uniform_ =
+        glGetUniformLocation(da2_overlay_program_, "u_Texture");
+    da2_overlay_position_attrib_ =
+        glGetAttribLocation(da2_overlay_program_, "a_Position");
+    da2_overlay_tex_coord_attrib_ =
+        glGetAttribLocation(da2_overlay_program_, "a_TexCoord");
+  }
+}
+
+void HelloArApplication::UpdateDa2OverlayTexture() {
+  if (da2_pipeline_ == nullptr || da2_overlay_texture_id_ == 0) {
+    return;
+  }
+
+  Da2Pipeline::DepthPreview preview;
+  if (!da2_pipeline_->GetLatestDepthPreview(&preview)) {
+    return;
+  }
+  if (preview.timestamp_ns <= da2_overlay_uploaded_timestamp_ns_) {
+    return;
+  }
+  if (preview.rgb.empty() || preview.width <= 0 || preview.height <= 0) {
+    return;
+  }
+
+  glBindTexture(GL_TEXTURE_2D, da2_overlay_texture_id_);
+  const bool resize_needed =
+      (preview.width != da2_overlay_width_ || preview.height != da2_overlay_height_);
+  if (resize_needed) {
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, preview.width, preview.height, 0,
+                 GL_RGB, GL_UNSIGNED_BYTE, preview.rgb.data());
+    da2_overlay_width_ = preview.width;
+    da2_overlay_height_ = preview.height;
+  } else {
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, preview.width, preview.height, GL_RGB,
+                    GL_UNSIGNED_BYTE, preview.rgb.data());
+  }
+  da2_overlay_uploaded_timestamp_ns_ = preview.timestamp_ns;
+}
+
+void HelloArApplication::DrawDa2Overlay() {
+  if (da2_overlay_program_ == 0 || da2_overlay_texture_id_ == 0 ||
+      da2_overlay_width_ <= 0 || da2_overlay_height_ <= 0 || width_ <= 0 ||
+      height_ <= 0) {
+    return;
+  }
+
+  const float ndc_w = 0.84f;
+  // Overlay UV is rotated by 90 degrees, so use swapped dimensions for layout.
+  const float texture_aspect =
+      static_cast<float>(da2_overlay_width_) / static_cast<float>(da2_overlay_height_);
+  const float display_aspect =
+      static_cast<float>(width_) / static_cast<float>(height_);
+  const float ndc_h = ndc_w * texture_aspect * display_aspect;
+  const float margin = 0.03f;
+  const float x0 = -1.0f + margin;
+  const float y1 = 1.0f - margin;
+  const float x1 = x0 + ndc_w;
+  const float y0 = y1 - ndc_h;
+
+  da2_overlay_vertices_ = {x0, y0, x1, y0, x0, y1, x1, y1};
+  da2_overlay_uvs_ = {
+      1.0f, 1.0f,
+      1.0f, 0.0f,
+      0.0f, 1.0f,
+      0.0f, 0.0f,
+  };
+
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+  glDepthMask(GL_FALSE);
+
+  glUseProgram(da2_overlay_program_);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, da2_overlay_texture_id_);
+  glUniform1i(da2_overlay_texture_uniform_, 0);
+
+  glVertexAttribPointer(da2_overlay_position_attrib_, 2, GL_FLOAT, GL_FALSE, 0,
+                        da2_overlay_vertices_.data());
+  glVertexAttribPointer(da2_overlay_tex_coord_attrib_, 2, GL_FLOAT, GL_FALSE, 0,
+                        da2_overlay_uvs_.data());
+  glEnableVertexAttribArray(da2_overlay_position_attrib_);
+  glEnableVertexAttribArray(da2_overlay_tex_coord_attrib_);
+  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+  glDisableVertexAttribArray(da2_overlay_position_attrib_);
+  glDisableVertexAttribArray(da2_overlay_tex_coord_attrib_);
+  glUseProgram(0);
+
+  glDepthMask(GL_TRUE);
+  glEnable(GL_DEPTH_TEST);
+  glEnable(GL_CULL_FACE);
 }
 
 int HelloArApplication::PublishImage() {
@@ -388,6 +515,8 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
 
   bool need_stream_image = stream_consumer_active_;
   bool need_record_image = false;
+  bool need_da2_image = (da2_pipeline_ != nullptr);
+  const bool need_stream_buffer_update = need_stream_image;
 #if HELLO_AR_ENABLE_MOBILI_VLP
   need_record_image = mobili::vlp::Recording();
 #endif
@@ -467,7 +596,7 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
             }
           }
 
-          {
+          if (need_stream_buffer_update) {
             std::lock_guard<std::mutex> lock(stream_mutex_);
             latest_gray_image_ = std::move(gray_buffer);
             latest_yuv_nv21_image_ = std::move(yuv_nv21_buffer);
@@ -489,6 +618,49 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
 
   }
 
+  if (need_da2_image && da2_pipeline_) {
+    ArImage* image = nullptr;
+    ArStatus image_status = ArFrame_acquireCameraImage(ar_session_, ar_frame_, &image);
+    if (image_status == AR_SUCCESS) {
+      int width = 0;
+      int height = 0;
+      int64_t image_timestamp_ns = 0;
+      ArImage_getTimestamp(ar_session_, image, &image_timestamp_ns);
+      ArImage_getWidth(ar_session_, image, &width);
+      ArImage_getHeight(ar_session_, image, &height);
+
+      const uint8_t* y = nullptr;
+      int y_length = 0;
+      ArImage_getPlaneData(ar_session_, image, 0, &y, &y_length);
+      if (y != nullptr && y_length > 0 && width > 0 && height > 0) {
+        int32_t y_row_stride = width;
+        int32_t y_pixel_stride = 1;
+        ArImage_getPlaneRowStride(ar_session_, image, 0, &y_row_stride);
+        ArImage_getPlanePixelStride(ar_session_, image, 0, &y_pixel_stride);
+        y_row_stride = std::max(1, y_row_stride);
+        y_pixel_stride = std::max(1, y_pixel_stride);
+
+        std::vector<uint8_t> gray_buffer(static_cast<size_t>(width) *
+                                         static_cast<size_t>(height));
+        if (y_pixel_stride == 1 && y_row_stride == width) {
+          const size_t bytes_to_copy =
+              std::min(gray_buffer.size(), static_cast<size_t>(std::max(0, y_length)));
+          std::memcpy(gray_buffer.data(), y, bytes_to_copy);
+        } else {
+          for (int r = 0; r < height; ++r) {
+            const uint8_t* src_row = y + static_cast<size_t>(r) * y_row_stride;
+            uint8_t* dst_row = gray_buffer.data() + static_cast<size_t>(r) * width;
+            for (int c = 0; c < width; ++c) {
+              dst_row[c] = src_row[static_cast<size_t>(c) * y_pixel_stride];
+            }
+          }
+        }
+        da2_pipeline_->EnqueueFrame(gray_buffer, width, height, image_timestamp_ns);
+      }
+      ArImage_release(image);
+    }
+  }
+
 #if HELLO_AR_ENABLE_MOBILI_VLP
   mobili::vlp::PushVioCameraPose(frame_timestamp_ns, quad.x, quad.y, quad.z,
                                  quad.w, trans[0], trans[1], trans[2],
@@ -505,6 +677,8 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
 
   background_renderer_.Draw(ar_session_, ar_frame_,
                             depthColorVisualizationEnabled);
+  UpdateDa2OverlayTexture();
+  DrawDa2Overlay();
 
   ArTrackingState camera_tracking_state;
   ArCamera_getTrackingState(ar_session_, ar_camera, &camera_tracking_state);

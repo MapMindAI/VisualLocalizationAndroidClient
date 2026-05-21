@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ONNX_MODEL="${1:-$ROOT_DIR/python/models/depth_anything_v2_metric_vits.onnx}"
+ONNX_MODEL="${1:-$ROOT_DIR/libs/da2/depth_anything_v2_metric_vits.onnx}"
 OUT_MNN="${2:-$ROOT_DIR/app_vlp/app/src/main/assets/models/depth_anything_v2_metric_vits.mnn}"
 INPUT_CONFIG_FILE="${INPUT_CONFIG_FILE:-$ROOT_DIR/app_vlp/scripts/input_config.txt}"
 MNN_CONVERTER="${MNN_CONVERTER:-MNNConvert}"
