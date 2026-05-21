@@ -1,0 +1,10 @@
+
+data
+build-cache
+uploads
+build*
+output
+managed_components
+dependencies.lock
+dist
+*.old
