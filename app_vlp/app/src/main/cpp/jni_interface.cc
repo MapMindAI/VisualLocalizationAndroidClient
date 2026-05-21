@@ -197,6 +197,18 @@ JNI_METHOD(jbyteArray, getLatestYuvNv21Image)
   return output;
 }
 
+JNI_METHOD(jbyteArray, getLatestDepth16Image)
+(JNIEnv* env, jclass, jlong native_application) {
+  std::vector<uint8_t> depth = native(native_application)->getLatestDepth16Image();
+  jbyteArray output = env->NewByteArray(static_cast<jsize>(depth.size()));
+  if (output != nullptr && !depth.empty()) {
+    env->SetByteArrayRegion(
+        output, 0, static_cast<jsize>(depth.size()),
+        reinterpret_cast<const jbyte*>(depth.data()));
+  }
+  return output;
+}
+
 JNI_METHOD(jlongArray, getLatestStreamDimensionsAndTimestamp)
 (JNIEnv* env, jclass, jlong native_application) {
   int64_t timestamp_ns = 0;
@@ -205,6 +217,21 @@ JNI_METHOD(jlongArray, getLatestStreamDimensionsAndTimestamp)
   native(native_application)->getLatestStreamMetadata(
       &timestamp_ns, &width, &height, nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+  jlong values[3] = {timestamp_ns, static_cast<jlong>(width),
+                     static_cast<jlong>(height)};
+  jlongArray output = env->NewLongArray(3);
+  if (output != nullptr) {
+    env->SetLongArrayRegion(output, 0, 3, values);
+  }
+  return output;
+}
+
+JNI_METHOD(jlongArray, getLatestDepthDimensionsAndTimestamp)
+(JNIEnv* env, jclass, jlong native_application) {
+  int64_t timestamp_ns = 0;
+  int width = 0;
+  int height = 0;
+  native(native_application)->getLatestDepthMetadata(&timestamp_ns, &width, &height);
   jlong values[3] = {timestamp_ns, static_cast<jlong>(width),
                      static_cast<jlong>(height)};
   jlongArray output = env->NewLongArray(3);

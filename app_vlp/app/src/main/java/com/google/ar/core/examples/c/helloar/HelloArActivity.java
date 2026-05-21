@@ -131,7 +131,10 @@ public class HelloArActivity extends AppCompatActivity
             }
             boolean hasGrpcClient =
                 grpcFrameStreamServer != null && grpcFrameStreamServer.hasSubscribers();
-            JniInterface.setStreamConsumerActive(nativeApplication, hasGrpcClient);
+            boolean shouldCaptureStreamData =
+                hasGrpcClient
+                    || (grpcFrameStreamServer != null && grpcFrameStreamServer.isRecordingEnabled());
+            JniInterface.setStreamConsumerActive(nativeApplication, shouldCaptureStreamData);
             if (grpcFrameStreamServer != null) {
               grpcFrameStreamServer.publishLatestFrame(nativeApplication);
             }
@@ -247,8 +250,9 @@ public class HelloArActivity extends AppCompatActivity
           }
         }
         Log.i("Mobili", "Create directory: " + record_folder);
-        int ret = JniInterface.onStartRec(record_folder);
-        displayInSnackbar("Start Recoding " + record_folder + " " + ret);
+        String recordFile = new File(recordFolder, "vlp_stream_vlp3.rec").getAbsolutePath();
+        boolean ok = grpcFrameStreamServer != null && grpcFrameStreamServer.startRecording(recordFile);
+        displayInSnackbar(ok ? ("Start Recording " + recordFile) : "Start Recording failed");
       }
     });
     //
@@ -256,7 +260,9 @@ public class HelloArActivity extends AppCompatActivity
     stoprecButton.setOnClickListener(new View.OnClickListener() {
       @Override
       public void onClick(View v) {
-        JniInterface.onStopRec();
+        if (grpcFrameStreamServer != null) {
+          grpcFrameStreamServer.stopRecording();
+        }
         displayInSnackbar("Stop Recoding");
       }
     });
@@ -447,10 +453,13 @@ public class HelloArActivity extends AppCompatActivity
    * Display the message in the snackbar.
    */
   private void displayInSnackbar(String message) {
+    if (snackbar != null && snackbar.isShown()) {
+      snackbar.dismiss();
+    }
     snackbar =
         Snackbar.make(
             HelloArActivity.this.findViewById(android.R.id.content),
-            message, Snackbar.LENGTH_INDEFINITE);
+            message, Snackbar.LENGTH_SHORT);
 
     // Set the snackbar background to light transparent black color.
     snackbar.getView().setBackgroundColor(0xbf323232);

@@ -271,6 +271,19 @@ std::vector<uint8_t> HelloArApplication::getLatestYuvNv21Image() const {
   return latest_yuv_nv21_image_;
 }
 
+std::vector<uint8_t> HelloArApplication::getLatestDepth16Image() const {
+  std::lock_guard<std::mutex> lock(stream_mutex_);
+  return latest_depth_u16le_image_;
+}
+
+void HelloArApplication::getLatestDepthMetadata(
+    int64_t* timestamp_ns, int* width, int* height) const {
+  std::lock_guard<std::mutex> lock(stream_mutex_);
+  if (timestamp_ns != nullptr) *timestamp_ns = latest_depth_timestamp_ns_;
+  if (width != nullptr) *width = latest_depth_width_;
+  if (height != nullptr) *height = latest_depth_height_;
+}
+
 void HelloArApplication::getLatestStreamMetadata(
     int64_t* timestamp_ns, int* width, int* height, float* fx, float* fy,
     float* cx, float* cy, float* qx, float* qy, float* qz, float* qw,
@@ -481,10 +494,56 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
         if (need_record_image) {
           mobili::vlp::RecordImage(image_timestamp_ns, width, height, y, fx, fy, cx,
                                    cy);
-        }
+      }
 #endif
       }
       ArImage_release(image);
+    }
+
+    if (need_stream_image) {
+      ArImage* depth_image = nullptr;
+      const ArStatus depth_status =
+          ArFrame_acquireDepthImage16Bits(ar_session_, ar_frame_, &depth_image);
+      if (depth_status == AR_SUCCESS && depth_image != nullptr) {
+        int depth_width = 0;
+        int depth_height = 0;
+        int64_t depth_timestamp_ns = 0;
+        ArImage_getTimestamp(ar_session_, depth_image, &depth_timestamp_ns);
+        ArImage_getWidth(ar_session_, depth_image, &depth_width);
+        ArImage_getHeight(ar_session_, depth_image, &depth_height);
+        const uint8_t* depth_ptr = nullptr;
+        int depth_len = 0;
+        ArImage_getPlaneData(ar_session_, depth_image, 0, &depth_ptr, &depth_len);
+        if (depth_ptr != nullptr && depth_len > 0 && depth_width > 0 && depth_height > 0) {
+          int32_t row_stride = depth_width * 2;
+          int32_t pixel_stride = 2;
+          ArImage_getPlaneRowStride(ar_session_, depth_image, 0, &row_stride);
+          ArImage_getPlanePixelStride(ar_session_, depth_image, 0, &pixel_stride);
+          row_stride = std::max(1, row_stride);
+          pixel_stride = std::max(1, pixel_stride);
+
+          std::vector<uint8_t> depth_u16le(
+              static_cast<size_t>(depth_width) * static_cast<size_t>(depth_height) * 2);
+          for (int r = 0; r < depth_height; ++r) {
+            const uint8_t* src_row = depth_ptr + static_cast<size_t>(r) * row_stride;
+            uint8_t* dst_row =
+                depth_u16le.data() + static_cast<size_t>(r) * static_cast<size_t>(depth_width) * 2;
+            for (int c = 0; c < depth_width; ++c) {
+              const uint8_t* src_px = src_row + static_cast<size_t>(c) * pixel_stride;
+              dst_row[2 * c] = src_px[0];
+              dst_row[2 * c + 1] = src_px[1];
+            }
+          }
+          {
+            std::lock_guard<std::mutex> lock(stream_mutex_);
+            latest_depth_u16le_image_ = std::move(depth_u16le);
+            latest_depth_width_ = depth_width;
+            latest_depth_height_ = depth_height;
+            latest_depth_timestamp_ns_ = depth_timestamp_ns;
+          }
+        }
+        ArImage_release(depth_image);
+      }
     }
   }
 

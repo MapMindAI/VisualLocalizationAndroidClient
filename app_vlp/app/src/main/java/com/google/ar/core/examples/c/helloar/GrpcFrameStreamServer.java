@@ -13,6 +13,8 @@ import io.grpc.stub.ServerCalls;
 import io.grpc.stub.StreamObserver;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -24,7 +26,13 @@ class GrpcFrameStreamServer {
   private static final String TAG = "GrpcFrameStreamServer";
   private static final String SERVICE_NAME = "vlp.FrameStreamService";
   private static final int FRAME_HEADER_MAGIC = 0x564c5032; // "VLP2"
+  private static final int RECORD_FRAME_MAGIC = 0x564c5033; // "VLP3"
   private static final int FRAME_HEADER_SIZE = 64;
+  private static final int EXT_HEADER_SIZE = 20; // jpeg_len, depth_w, depth_h, depth_fmt, depth_len
+  private static final int DEPTH_FORMAT_U16_MM = 1;
+  private static final byte[] RECORD_FILE_MAGIC = new byte[] {'V', 'L', 'P', 'R', 'E', 'C', '1', '\n'};
+  private static final int RECORD_FILE_VERSION = 1;
+  private static final int RECORD_ENTRY_HEADER_SIZE = 12; // <QI>
   private static final int JPEG_QUALITY = 80;
 
   private static final MethodDescriptor.Marshaller<byte[]> BYTE_ARRAY_MARSHALLER =
@@ -63,6 +71,10 @@ class GrpcFrameStreamServer {
   private final CopyOnWriteArrayList<ServerCallStreamObserver<byte[]>> subscribers =
       new CopyOnWriteArrayList<>();
   private volatile long lastBroadcastTimestampNs = Long.MIN_VALUE;
+  private final Object recordLock = new Object();
+  private volatile boolean recordingEnabled = false;
+  private FileOutputStream recordOutputStream = null;
+  private long recordStartTimestampNs = Long.MIN_VALUE;
   private Server server;
 
   GrpcFrameStreamServer(int port) {
@@ -93,6 +105,7 @@ class GrpcFrameStreamServer {
     if (server == null) {
       return;
     }
+    stopRecording();
     for (ServerCallStreamObserver<byte[]> observer : subscribers) {
       try {
         observer.onCompleted();
@@ -127,8 +140,85 @@ class GrpcFrameStreamServer {
     return false;
   }
 
+  boolean isRecordingEnabled() {
+    return recordingEnabled;
+  }
+
+  boolean startRecording(String path) {
+    synchronized (recordLock) {
+      stopRecordingLocked();
+      try {
+        File outputFile = new File(path);
+        File parent = outputFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+          Log.e(TAG, "Failed to create record parent folder: " + parent.getAbsolutePath());
+          return false;
+        }
+        recordOutputStream = new FileOutputStream(outputFile);
+        ByteBuffer fileHeader = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+        fileHeader.put(RECORD_FILE_MAGIC);
+        fileHeader.putInt(RECORD_FILE_VERSION);
+        recordOutputStream.write(fileHeader.array());
+        recordOutputStream.flush();
+        recordStartTimestampNs = Long.MIN_VALUE;
+        recordingEnabled = true;
+        Log.i(TAG, "Recording started: " + outputFile.getAbsolutePath());
+        return true;
+      } catch (IOException e) {
+        Log.e(TAG, "Failed to start recording", e);
+        stopRecordingLocked();
+        return false;
+      }
+    }
+  }
+
+  void stopRecording() {
+    synchronized (recordLock) {
+      stopRecordingLocked();
+    }
+  }
+
+  private void stopRecordingLocked() {
+    recordingEnabled = false;
+    recordStartTimestampNs = Long.MIN_VALUE;
+    if (recordOutputStream != null) {
+      try {
+        recordOutputStream.flush();
+        recordOutputStream.close();
+      } catch (IOException ignored) {
+      }
+      recordOutputStream = null;
+      Log.i(TAG, "Recording stopped.");
+    }
+  }
+
+  private void appendRecordFrame(long timestampNs, byte[] payload) {
+    synchronized (recordLock) {
+      if (!recordingEnabled || recordOutputStream == null) {
+        return;
+      }
+      try {
+        if (recordStartTimestampNs == Long.MIN_VALUE) {
+          recordStartTimestampNs = timestampNs;
+        }
+        long relNs = Math.max(0L, timestampNs - recordStartTimestampNs);
+        ByteBuffer hdr = ByteBuffer.allocate(RECORD_ENTRY_HEADER_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        hdr.putLong(relNs);
+        hdr.putInt(payload.length);
+        recordOutputStream.write(hdr.array());
+        recordOutputStream.write(payload);
+      } catch (IOException e) {
+        Log.e(TAG, "Recording write failed. Stopping recorder.", e);
+        stopRecordingLocked();
+      }
+    }
+  }
+
   void publishLatestFrame(long nativeApplication) {
-    if (server == null || subscribers.isEmpty()) {
+    if (server == null) {
+      return;
+    }
+    if (subscribers.isEmpty() && !recordingEnabled) {
       return;
     }
     if (!JniInterface.hasLatestStreamFrame(nativeApplication)) {
@@ -136,8 +226,14 @@ class GrpcFrameStreamServer {
     }
 
     byte[] yuvNv21 = JniInterface.getLatestYuvNv21Image(nativeApplication);
+    byte[] depth16 = null;
     long[] dimensionsAndTimestamp =
         JniInterface.getLatestStreamDimensionsAndTimestamp(nativeApplication);
+    long[] depthDimsAndTimestamp = null;
+    if (recordingEnabled) {
+      depth16 = JniInterface.getLatestDepth16Image(nativeApplication);
+      depthDimsAndTimestamp = JniInterface.getLatestDepthDimensionsAndTimestamp(nativeApplication);
+    }
     float[] intrinsics = JniInterface.getLatestStreamIntrinsics(nativeApplication);
     float[] pose = JniInterface.getLatestStreamPose(nativeApplication);
 
@@ -170,7 +266,7 @@ class GrpcFrameStreamServer {
         break;
       }
     }
-    if (!hasReadySubscriber) {
+    if (!hasReadySubscriber && !recordingEnabled) {
       return;
     }
 
@@ -205,6 +301,51 @@ class GrpcFrameStreamServer {
     buffer.putFloat(pose[6]); // tz
     buffer.put(jpegBytes);
     byte[] payload = buffer.array();
+
+    if (recordingEnabled) {
+      int depthWidth = 0;
+      int depthHeight = 0;
+      int depthLen = 0;
+      if (depth16 != null && depthDimsAndTimestamp != null && depthDimsAndTimestamp.length >= 3) {
+        depthWidth = (int) depthDimsAndTimestamp[1];
+        depthHeight = (int) depthDimsAndTimestamp[2];
+        depthLen = depth16.length;
+        if (depthWidth <= 0 || depthHeight <= 0 || depthLen <= 0) {
+          depthWidth = 0;
+          depthHeight = 0;
+          depthLen = 0;
+        }
+      }
+
+      ByteBuffer recordBuffer =
+          ByteBuffer.allocate(FRAME_HEADER_SIZE + EXT_HEADER_SIZE + jpegBytes.length + depthLen)
+              .order(ByteOrder.LITTLE_ENDIAN);
+      recordBuffer.putInt(RECORD_FRAME_MAGIC);
+      recordBuffer.putLong(timestampNs);
+      recordBuffer.putInt(width);
+      recordBuffer.putInt(height);
+      recordBuffer.putFloat(intrinsics[0]);
+      recordBuffer.putFloat(intrinsics[1]);
+      recordBuffer.putFloat(intrinsics[2]);
+      recordBuffer.putFloat(intrinsics[3]);
+      recordBuffer.putFloat(pose[0]);
+      recordBuffer.putFloat(pose[1]);
+      recordBuffer.putFloat(pose[2]);
+      recordBuffer.putFloat(pose[3]);
+      recordBuffer.putFloat(pose[4]);
+      recordBuffer.putFloat(pose[5]);
+      recordBuffer.putFloat(pose[6]);
+      recordBuffer.putInt(jpegBytes.length);
+      recordBuffer.putInt(depthWidth);
+      recordBuffer.putInt(depthHeight);
+      recordBuffer.putInt(depthLen > 0 ? DEPTH_FORMAT_U16_MM : 0);
+      recordBuffer.putInt(depthLen);
+      recordBuffer.put(jpegBytes);
+      if (depthLen > 0) {
+        recordBuffer.put(depth16, 0, depthLen);
+      }
+      appendRecordFrame(timestampNs, recordBuffer.array());
+    }
 
     Iterator<ServerCallStreamObserver<byte[]>> iter = subscribers.iterator();
     while (iter.hasNext()) {

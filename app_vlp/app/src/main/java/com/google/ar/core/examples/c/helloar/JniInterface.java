@@ -53,7 +53,9 @@ public class JniInterface {
   public static native boolean hasLatestStreamFrame(long nativeApplication);
   public static native byte[] getLatestGrayImage(long nativeApplication);
   public static native byte[] getLatestYuvNv21Image(long nativeApplication);
+  public static native byte[] getLatestDepth16Image(long nativeApplication);
   public static native long[] getLatestStreamDimensionsAndTimestamp(long nativeApplication);
+  public static native long[] getLatestDepthDimensionsAndTimestamp(long nativeApplication);
   public static native float[] getLatestStreamIntrinsics(long nativeApplication);
   public static native float[] getLatestStreamPose(long nativeApplication);
 

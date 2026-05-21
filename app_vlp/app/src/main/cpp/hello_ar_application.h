@@ -97,6 +97,8 @@ class HelloArApplication {
   bool hasLatestStreamFrame() const;
   std::vector<uint8_t> getLatestGrayImage() const;
   std::vector<uint8_t> getLatestYuvNv21Image() const;
+  std::vector<uint8_t> getLatestDepth16Image() const;
+  void getLatestDepthMetadata(int64_t* timestamp_ns, int* width, int* height) const;
   void getLatestStreamMetadata(int64_t* timestamp_ns, int* width, int* height,
                                float* fx, float* fy, float* cx, float* cy,
                                float* qx, float* qy, float* qz, float* qw,
@@ -149,9 +151,13 @@ class HelloArApplication {
   mutable std::mutex stream_mutex_;
   std::vector<uint8_t> latest_gray_image_;
   std::vector<uint8_t> latest_yuv_nv21_image_;
+  std::vector<uint8_t> latest_depth_u16le_image_;
   int latest_gray_width_ = 0;
   int latest_gray_height_ = 0;
+  int latest_depth_width_ = 0;
+  int latest_depth_height_ = 0;
   int64_t latest_timestamp_ns_ = 0;
+  int64_t latest_depth_timestamp_ns_ = 0;
   float latest_fx_ = 0.0f;
   float latest_fy_ = 0.0f;
   float latest_cx_ = 0.0f;
