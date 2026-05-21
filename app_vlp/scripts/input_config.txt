@@ -1,0 +1,3 @@
+input_size = 1
+input_names = image
+input_dims = 1x3x280x364

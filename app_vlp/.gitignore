@@ -14,3 +14,6 @@ local.properties
 
 # Android NDK cmake output.
 .cxx/
+
+
+*.mnn
