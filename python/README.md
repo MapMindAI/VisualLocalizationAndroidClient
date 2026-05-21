@@ -108,6 +108,8 @@ python3 python/grpc_stream_da2_depth.py \
   --input data/vlp_stream_vlp3.rec --no-display \
   --model python/models/depth_anything_v2_metric_vits.onnx \
   --providers CPUExecutionProvider \
+  --output-mp4 data/replay.mp4 \
+  --mp4-fps 20
   --websocket-port 9002 \
   --pc-recent-n 8 \
   --pc-pixel-step 8 \

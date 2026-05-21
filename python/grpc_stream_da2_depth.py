@@ -376,7 +376,7 @@ def run_once(
         cv2.putText(panel, "RGB", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(
             panel,
-            "gRPC depth",
+            "ARCore depth",
             (img.shape[1] + 10, 24),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.65,
@@ -470,7 +470,7 @@ def run_once(
                     "pose": {"tx": tx, "ty": ty, "tz": tz},
                     "scale_text": f"DA2 depth x{args.da2_depth_scale:.3f}",
                     "da3_status": (
-                        f"grpc_depth=[{grpc_depth_min:.3f},{grpc_depth_max:.3f}] "
+                        f"arcore_depth=[{grpc_depth_min:.3f},{grpc_depth_max:.3f}] "
                         f"da2_depth=[{dmin:.3f},{dmax:.3f}] infer={infer_ms:.1f}ms"
                     ),
                     "voxblox": {
