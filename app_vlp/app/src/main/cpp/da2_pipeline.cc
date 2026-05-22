@@ -240,31 +240,9 @@ struct Da2Pipeline::Impl {
 
         if (out_h > 0 && out_w > 0) {
           const int out_count = out_h * out_w;
-          float vmin = std::numeric_limits<float>::infinity();
-          float vmax = -std::numeric_limits<float>::infinity();
-          for (int i = 0; i < out_count; ++i) {
-            const float d = depth_ptr[i];
-            if (!std::isfinite(d)) {
-              continue;
-            }
-            vmin = std::min(vmin, d);
-            vmax = std::max(vmax, d);
-          }
-          if (!std::isfinite(vmin) || !std::isfinite(vmax) || vmin >= vmax) {
-            vmin = 0.0f;
-            vmax = 1.0f;
-          }
-          const float inv_span = 1.0f / std::max(1e-6f, vmax - vmin);
-          constexpr float kVizMaxDepthMeters = 30.0f;
-
           std::vector<uint8_t> preview_depth_rg(static_cast<size_t>(out_count) * 2U);
           for (int i = 0; i < out_count; ++i) {
-            const float d = depth_ptr[i];
-            const float t = std::isfinite(d) ? (d - vmin) * inv_span : 0.0f;
-            const float depth_m = std::min(
-                kVizMaxDepthMeters, std::max(0.0f, t * kVizMaxDepthMeters));
-            const uint32_t depth_mm =
-                static_cast<uint32_t>(depth_m * 1000.0f);
+            const uint32_t depth_mm = static_cast<uint32_t>(depth_ptr[i] * 1000.0f);
             preview_depth_rg[2 * i + 0] = static_cast<uint8_t>(depth_mm & 0xFFu);
             preview_depth_rg[2 * i + 1] = static_cast<uint8_t>((depth_mm >> 8) & 0xFFu);
           }

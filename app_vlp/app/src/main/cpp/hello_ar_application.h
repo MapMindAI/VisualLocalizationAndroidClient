@@ -91,6 +91,7 @@ class HelloArApplication {
 
   void OnSettingsChange(bool is_instant_placement_enabled);
   void setRenderEnabled(bool enabled) { render_enabled_ = enabled; }
+  void setSceneContentEnabled(bool enabled) { scene_content_enabled_ = enabled; }
   void setStreamConsumerActive(bool active) { stream_consumer_active_ = active; }
   void setDepthSource(int source) { depth_source_.store(source); }
 
@@ -171,6 +172,7 @@ class HelloArApplication {
   float latest_tz_ = 0.0f;
   bool has_latest_stream_frame_ = false;
   bool render_enabled_ = true;
+  bool scene_content_enabled_ = true;
   bool stream_consumer_active_ = false;
   std::atomic<int> depth_source_{0};  // 0=None, 1=ARCore, 2=DA2
 

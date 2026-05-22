@@ -241,8 +241,9 @@ void HelloArApplication::DrawDa2Overlay() {
       static_cast<float>(width_) / static_cast<float>(height_);
   const float ndc_h = ndc_w * texture_aspect * display_aspect;
   const float margin = 0.03f;
+  const float top_offset = 0.18f;
   const float x0 = -1.0f + margin;
-  const float y1 = 1.0f - margin;
+  const float y1 = 1.0f - margin - top_offset;
   const float x1 = x0 + ndc_w;
   const float y0 = y1 - ndc_h;
 
@@ -650,11 +651,16 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
         static_cast<float>(width_) / static_cast<float>(height_);
     const float ndc_h = ndc_w * texture_aspect * display_aspect;
     const float margin = 0.03f;
+    const float top_offset = 0.18f;
     const float x0 = -1.0f + margin;
-    const float y1 = 1.0f - margin;
+    const float y1 = 1.0f - margin - top_offset;
     const float x1 = x0 + ndc_w;
     const float y0 = y1 - ndc_h;
     background_renderer_.DrawDepthPanel(ar_session_, ar_frame_, x0, y0, x1, y1);
+  }
+  if (!scene_content_enabled_) {
+    ArCamera_release(ar_camera);
+    return;
   }
 
   ArTrackingState camera_tracking_state;

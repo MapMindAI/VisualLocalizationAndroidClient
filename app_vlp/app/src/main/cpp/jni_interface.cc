@@ -78,6 +78,11 @@ JNI_METHOD(void, setRenderEnabled)
   native(native_application)->setRenderEnabled(enabled == JNI_TRUE);
 }
 
+JNI_METHOD(void, setSceneContentEnabled)
+(JNIEnv *, jclass, jlong native_application, jboolean enabled) {
+  native(native_application)->setSceneContentEnabled(enabled == JNI_TRUE);
+}
+
 JNI_METHOD(void, setStreamConsumerActive)
 (JNIEnv *, jclass, jlong native_application, jboolean active) {
   native(native_application)->setStreamConsumerActive(active == JNI_TRUE);

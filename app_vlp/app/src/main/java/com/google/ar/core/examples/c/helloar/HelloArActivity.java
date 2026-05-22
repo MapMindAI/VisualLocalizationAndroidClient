@@ -74,6 +74,7 @@ public class HelloArActivity extends AppCompatActivity
   private long nativeApplication;
   private GestureDetector gestureDetector;
   private boolean renderEnabled = true;
+  private boolean sceneContentEnabled = true;
 
   private Snackbar snackbar;
   private GrpcFrameStreamServer grpcFrameStreamServer;
@@ -176,6 +177,9 @@ public class HelloArActivity extends AppCompatActivity
             new GestureDetector.SimpleOnGestureListener() {
               @Override
               public boolean onSingleTapUp(final MotionEvent e) {
+                if (!renderEnabled || !sceneContentEnabled) {
+                  return true;
+                }
                 // For devices that support the Depth API, shows a dialog to suggest enabling
                 // depth-based occlusion. This dialog needs to be spawned on the UI thread.
                 HelloArActivity.this.runOnUiThread(() -> showOcclusionDialogIfNeeded());
@@ -271,6 +275,7 @@ public class HelloArActivity extends AppCompatActivity
       }
     });
     final Button renderToggleButton = findViewById(R.id.render_toggle_button);
+    final Button sceneToggleButton = findViewById(R.id.scene_toggle_button);
     renderToggleButton.setText("Disable Render");
     renderToggleButton.setOnClickListener(new View.OnClickListener() {
       @Override
@@ -287,6 +292,17 @@ public class HelloArActivity extends AppCompatActivity
         }
       }
     });
+    sceneToggleButton.setText("Hide Scene");
+    sceneToggleButton.setOnClickListener(
+        new View.OnClickListener() {
+          @Override
+          public void onClick(View v) {
+            sceneContentEnabled = !sceneContentEnabled;
+            JniInterface.setSceneContentEnabled(nativeApplication, sceneContentEnabled);
+            sceneToggleButton.setText(sceneContentEnabled ? "Hide Scene" : "Show Scene");
+            displayInSnackbar(sceneContentEnabled ? "Scene enabled" : "Scene hidden");
+          }
+        });
 
     final Button depthSourceButton = findViewById(R.id.depth_source_button);
     final Button instantPlacementButton = findViewById(R.id.instant_placement_button);
@@ -329,6 +345,7 @@ public class HelloArActivity extends AppCompatActivity
         nativeApplication, instantPlacementSettings.isInstantPlacementEnabled());
       JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
       JniInterface.setRenderEnabled(nativeApplication, renderEnabled);
+      JniInterface.setSceneContentEnabled(nativeApplication, sceneContentEnabled);
       surfaceView.setRenderMode(
           renderEnabled
               ? GLSurfaceView.RENDERMODE_CONTINUOUSLY
