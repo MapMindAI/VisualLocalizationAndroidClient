@@ -1,6 +1,6 @@
 # app_vlp
 
-Android AR app module with optional `mobili::vlp` integration and a built-in gRPC stream server.
+Android AR app module with optional `mapmind_vlp_api` native integration and a built-in gRPC stream server.
 
 https://github.com/user-attachments/assets/0202e980-5f74-47c4-9e53-88ddcdbd4d77
 
@@ -35,20 +35,10 @@ python3 python/ws_stream_client.py --host 127.0.0.1 --port 50051
 
 The client displays the stream live in OpenCV with overlaid intrinsics and pose.
 
-## Optional mobili::vlp library
+## mapmind_vlp_api library
 
-`mobili::vlp` is disabled by default.
-
-- Enable it with Gradle property:
-
-```bash
-./gradlew :app:assembleDebug -PenableMobiliVlp=true
-```
-
-- Default (disabled):
+`mapmind_vlp_api` is enabled by default and linked by `hello_ar_native`.
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
-
-When disabled, the app runs without linking `libmobili_vlp_api.so`.

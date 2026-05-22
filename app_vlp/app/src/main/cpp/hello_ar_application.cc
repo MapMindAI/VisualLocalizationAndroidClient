@@ -22,14 +22,15 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <vector>
 
 #include "arcore_c_api.h"
 #include "da2_pipeline.h"
 #include "plane_renderer.h"
 #include "util.h"
 
-#if HELLO_AR_ENABLE_MOBILI_VLP
-#include "mobili_vlp_api.h"
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+#include "mapmind_vlp_api.h"
 #endif
 
 namespace hello_ar {
@@ -63,19 +64,12 @@ HelloArApplication::HelloArApplication(AAssetManager* asset_manager)
     : asset_manager_(asset_manager) {
 
   LOGI("HelloArApplication start");
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  mobili::vlp::VlpConfig config;
-  config.vlp_address = "192.168.10.39:40010";
-  config.update_with_covariance = true;
-  config.buffer_max_spin = 10e9;
-  config.vio_gravity_direction[0] = 0.0f;
-  config.vio_gravity_direction[1] = 1.0f;
-  config.vio_gravity_direction[2] = 0.0f;
-  if (!mobili::vlp::StartVlpServer(config)) {
-    LOGI("StartVlpServer failed!");
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  if (!mapmind::vlp::StartGrpcServer(50051)) {
+    LOGI("mapmind::vlp::StartGrpcServer failed!");
   }
 #else
-  LOGI("mobili::vlp disabled (HELLO_AR_ENABLE_MOBILI_VLP=0)");
+  LOGI("mapmind::vlp disabled (HELLO_AR_ENABLE_MAPMIND_VLP=0)");
 #endif
 
   da2_pipeline_.reset(new Da2Pipeline(asset_manager_));
@@ -90,6 +84,9 @@ HelloArApplication::~HelloArApplication() {
     ArSession_destroy(ar_session_);
     ArFrame_destroy(ar_frame_);
   }
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  mapmind::vlp::StopGrpcServer();
+#endif
 }
 
 void HelloArApplication::OnPause() {
@@ -157,15 +154,6 @@ void HelloArApplication::OnSurfaceCreated() {
                                  depth_texture_.GetWidth(),
                                  depth_texture_.GetHeight());
 
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  // world_mesh_renderer_
-  SetColor(73.0f / 255.0f, 73.0f / 255.0f, 130.0f / 255.0f, 100.0f / 255.0f, world_mesh_color_);
-  world_mesh_renderer_.InitializeGlContent(asset_manager_, "/storage/emulated/0/Android/data/com.google.ar.core.examples.c.helloar/files/tsdf_mesh.obj");
-  world_mesh_renderer_.SetDepthTexture(depth_texture_.GetTextureId(),
-                                       depth_texture_.GetWidth(),
-                                       depth_texture_.GetHeight());
-#endif // #if HELLO_AR_ENABLE_MOBILI_VLP
-
   plane_renderer_.InitializeGlContent(asset_manager_);
   InitializeDa2OverlayGl();
 }
@@ -210,6 +198,15 @@ void HelloArApplication::UpdateDa2OverlayTexture() {
   if (preview.depth_rg.empty() || preview.width <= 0 || preview.height <= 0) {
     return;
   }
+
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  // Publish depth once per updated DA2 output; associated with its RGB timestamp.
+  if (preview.timestamp_ns > da2_depth_pushed_timestamp_ns_) {
+    mapmind::vlp::PushDepthUpdate(preview.timestamp_ns, preview.width, preview.height,
+                                  preview.depth_rg.data(), preview.depth_rg.size());
+    da2_depth_pushed_timestamp_ns_ = preview.timestamp_ns;
+  }
+#endif
 
   glBindTexture(GL_TEXTURE_2D, da2_overlay_texture_id_);
   const bool resize_needed =
@@ -302,22 +299,12 @@ int HelloArApplication::PublishImage() {
   LOGI("camera intrinsics %ld (%f, %f, %f, %f, %d x %d)", image_ns, fx, fy, cx, cy, width_intr, height_intr);
 
   int ret = 0;
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  std::string error_message;
-  if (false) {
-    uint8_t* yuv420 = new uint8_t[yLength + uLength + vLength];
-    memcpy(yuv420, y, yLength);
-    memcpy(yuv420 + yLength, u, uLength);
-    memcpy(yuv420 + yLength + uLength, v, vLength);
-
-    ret = mobili::vlp::PushImageYUV(image_ns, width, height, yuv420, yLength + uLength + vLength,
-                                    fx, fy, cx, cy);
-    delete[](yuv420);
-  } else {
-    ret = mobili::vlp::PushImageGray(image_ns, width, height, y, 0, fx, fy, cx, cy);
-  }
-  LOGI("vlp message %d", ret);
-#endif
+  (void)y;
+  (void)u;
+  (void)v;
+  (void)yLength;
+  (void)uLength;
+  (void)vLength;
 
   ArImage_release(image);
   ArCamera_release(ar_camera);
@@ -326,19 +313,11 @@ int HelloArApplication::PublishImage() {
 }
 
 bool HelloArApplication::popDebugMessage() {
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  return mobili::vlp::PopLatestDebugMessage(nullptr);
-#else
   return false;
-#endif
 }
 
 std::string HelloArApplication::getDebugMessage() {
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  return mobili::vlp::GetLatestDebugMessage();
-#else
   return "";
-#endif
 }
 
 bool HelloArApplication::hasLatestStreamFrame() const {
@@ -406,14 +385,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
                                    depth_texture_.GetWidth(),
                                    depth_texture_.GetHeight());
   }
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  if (render_enabled_) {
-    world_mesh_renderer_.SetDepthTexture(depth_texture_.GetTextureId(),
-                                         depth_texture_.GetWidth(),
-                                         depth_texture_.GetHeight());
-  }
-#endif // #if HELLO_AR_ENABLE_MOBILI_VLP
-
   ArCamera* ar_camera;
   ArFrame_acquireCamera(ar_session_, ar_frame_, &ar_camera);
 
@@ -427,9 +398,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
     calculate_uv_transform_ = false;
     glm::mat3 transform = GetTextureTransformMatrix(ar_session_, ar_frame_);
     andy_renderer_.SetUvTransformMatrix(transform);
-#if HELLO_AR_ENABLE_MOBILI_VLP
-    world_mesh_renderer_.SetUvTransformMatrix(transform);
-#endif // #if HELLO_AR_ENABLE_MOBILI_VLP
   }
 
   glm::mat4 view_mat;
@@ -475,16 +443,36 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
     has_latest_stream_frame_ = true;
   }
 
-  bool need_stream_image = stream_consumer_active_;
+  bool need_stream_image = false;
   bool need_record_image = false;
   const int depth_source = depth_source_.load();
   const bool use_arcore_depth_source = (depth_source == 1);
   const bool use_da2_depth_source = (depth_source == 2);
   bool need_da2_image = use_da2_depth_source && (da2_pipeline_ != nullptr);
   const bool need_stream_buffer_update = need_stream_image;
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  need_record_image = mobili::vlp::Recording();
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  need_stream_image = mapmind::vlp::HasGrpcServer();
+  need_record_image = mapmind::vlp::Recording();
 #endif
+
+  int32_t is_depth_supported = 0;
+  ArSession_isDepthModeSupported(ar_session_, AR_DEPTH_MODE_AUTOMATIC, &is_depth_supported);
+  if (is_depth_supported && use_arcore_depth_source && !use_da2_depth_source) {
+    depth_texture_.UpdateWithDepthImageOnGlThread(*ar_session_, *ar_frame_);
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+    if (need_stream_image || need_record_image) {
+      const int64_t depth_ts_ns = depth_texture_.GetLatestDepthTimestampNs();
+      const std::vector<uint8_t>& depth_bytes = depth_texture_.GetLatestDepthBytes();
+      if (depth_ts_ns > arcore_depth_pushed_timestamp_ns_ && !depth_bytes.empty()) {
+        mapmind::vlp::PushDepthUpdate(
+            depth_ts_ns, static_cast<int>(depth_texture_.GetWidth()),
+            static_cast<int>(depth_texture_.GetHeight()), depth_bytes.data(),
+            depth_bytes.size());
+        arcore_depth_pushed_timestamp_ns_ = depth_ts_ns;
+      }
+    }
+#endif
+  }
 
   if (need_stream_image || need_record_image) {
     ArImage* image = nullptr;
@@ -508,7 +496,7 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
       ArImage_getPlaneData(ar_session_, image, 2, &v, &v_length);
       if (y != nullptr && u != nullptr && v != nullptr && y_length > 0 &&
           u_length > 0 && v_length > 0) {
-        if (need_stream_image) {
+        if (need_stream_image || need_record_image) {
           int32_t y_row_stride = width;
           int32_t y_pixel_stride = 1;
           int32_t u_row_stride = width / 2;
@@ -561,6 +549,15 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
             }
           }
 
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+          if (need_stream_image || need_record_image) {
+            mapmind::vlp::PushFrameYuvNv21(
+                image_timestamp_ns, width, height, yuv_nv21_buffer.data(),
+                yuv_nv21_buffer.size(), fx, fy, cx, cy, quad.x, quad.y, quad.z, quad.w,
+                trans[0], trans[1], trans[2]);
+          }
+#endif
+
           if (need_stream_buffer_update) {
             std::lock_guard<std::mutex> lock(stream_mutex_);
             latest_gray_image_ = std::move(gray_buffer);
@@ -570,13 +567,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
             latest_timestamp_ns_ = image_timestamp_ns;
           }
         }
-
-#if HELLO_AR_ENABLE_MOBILI_VLP
-        if (need_record_image) {
-          mobili::vlp::RecordImage(image_timestamp_ns, width, height, y, fx, fy, cx,
-                                   cy);
-      }
-#endif
       }
       ArImage_release(image);
     }
@@ -626,12 +616,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
     }
   }
 
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  mobili::vlp::PushVioCameraPose(frame_timestamp_ns, quad.x, quad.y, quad.z,
-                                 quad.w, trans[0], trans[1], trans[2],
-                                 mobili::vlp::OPENGL);
-#endif  // #if HELLO_AR_ENABLE_MOBILI_VLP
-
   if (!render_enabled_) {
     // Keep output stable when rendering is disabled to avoid white flicker.
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -674,13 +658,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
   // If the camera isn't tracking don't bother rendering other objects.
   if (camera_tracking_state != AR_TRACKING_STATE_TRACKING) {
     return;
-  }
-
-  int32_t is_depth_supported = 0;
-  ArSession_isDepthModeSupported(ar_session_, AR_DEPTH_MODE_AUTOMATIC,
-                                 &is_depth_supported);
-  if (is_depth_supported && !use_da2_depth_source) {
-    depth_texture_.UpdateWithDepthImageOnGlThread(*ar_session_, *ar_frame_);
   }
 
   // Get light estimation value.
@@ -745,10 +722,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
   plane_list = nullptr;
 
   andy_renderer_.setUseDepthForOcclusion(asset_manager_, useDepthForOcclusion);
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  world_mesh_renderer_.setUseDepthForOcclusion(asset_manager_, useDepthForOcclusion);
-#endif //#if HELLO_AR_ENABLE_MOBILI_VLP
-
   // Render Andy objects.
   glm::mat4 model_mat(1.0f);
   for (auto& colored_anchor : anchors_) {
@@ -764,27 +737,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
                           colored_anchor.color);
     }
   }
-
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  {
-    // set pose using vlp result
-    int64_t timestamp;
-    float world_to_local[7];
-    if (GetLatestWorldToLocal(mobili::vlp::DEFAULT, &timestamp, world_to_local)) {
-      // world_to_local : qx qy qz qw tx ty tz
-      glm::quat quad(world_to_local[3], world_to_local[0], world_to_local[1], world_to_local[2]);
-      glm::vec3 trans(world_to_local[4], world_to_local[5], world_to_local[6]);
-
-      glm::mat4 model_mat(1.0f);
-      glm::mat4 rot_mat = glm::toMat4(quad);          // Convert quaternion to rotation matrix
-      model_mat = glm::translate(model_mat, trans); // Apply translation
-      model_mat *= rot_mat;                               // Then apply rotation
-
-      world_mesh_renderer_.Draw(projection_mat, view_mat, model_mat, color_correction,
-                                world_mesh_color_);
-    }
-  }
-#endif //#if HELLO_AR_ENABLE_MOBILI_VLP
 
   // Update and render point cloud.
   ArPointCloud* ar_point_cloud = nullptr;

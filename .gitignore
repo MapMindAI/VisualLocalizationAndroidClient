@@ -9,3 +9,4 @@ data
 *__pycache__
 python/models
 bazel-*
+libs/mapmind_vlp_api

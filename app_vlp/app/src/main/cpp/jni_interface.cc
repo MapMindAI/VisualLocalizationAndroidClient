@@ -20,12 +20,12 @@
 
 #include "hello_ar_application.h"
 
-#ifndef HELLO_AR_ENABLE_MOBILI_VLP
-#define HELLO_AR_ENABLE_MOBILI_VLP 0
+#ifndef HELLO_AR_ENABLE_MAPMIND_VLP
+#define HELLO_AR_ENABLE_MAPMIND_VLP 0
 #endif
 
-#if HELLO_AR_ENABLE_MOBILI_VLP
-#include "mobili_vlp_api.h"
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+#include "mapmind_vlp_api.h"
 #endif
 
 #define JNI_METHOD(return_type, method_name) \
@@ -50,7 +50,7 @@ inline hello_ar::HelloArApplication *native(jlong ptr) {
 
 jint JNI_OnLoad(JavaVM *vm, void *) {
   g_vm = vm;
-#if HELLO_AR_ENABLE_MOBILI_VLP
+#if HELLO_AR_ENABLE_MAPMIND_VLP
   dm::xr::RunLoggingThread();
 #endif
   return JNI_VERSION_1_6;
@@ -81,11 +81,6 @@ JNI_METHOD(void, setRenderEnabled)
 JNI_METHOD(void, setSceneContentEnabled)
 (JNIEnv *, jclass, jlong native_application, jboolean enabled) {
   native(native_application)->setSceneContentEnabled(enabled == JNI_TRUE);
-}
-
-JNI_METHOD(void, setStreamConsumerActive)
-(JNIEnv *, jclass, jlong native_application, jboolean active) {
-  native(native_application)->setStreamConsumerActive(active == JNI_TRUE);
 }
 
 JNI_METHOD(void, setDepthSource)
@@ -141,8 +136,8 @@ JNI_METHOD(int, onStartRec)
   std::string cppString(cstr);
   env->ReleaseStringUTFChars(record_folder, cstr);
 
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  return mobili::vlp::StartRecording(cppString);
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  return mapmind::vlp::StartRecording(cppString);
 #else
   (void)cppString;
   return -1;
@@ -151,8 +146,8 @@ JNI_METHOD(int, onStartRec)
 
 JNI_METHOD(void, onStopRec)
 (JNIEnv* env, jclass) {
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  mobili::vlp::StopRecording();
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  mapmind::vlp::StopRecording();
 #else
   (void)env;
 #endif

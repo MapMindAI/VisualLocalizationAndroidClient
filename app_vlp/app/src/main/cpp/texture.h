@@ -17,6 +17,9 @@
 #ifndef THIRD_PARTY_ARCORE_JAVA_COM_GOOGLE_AR_CORE_EXAMPLES_C_HELLOAR_CPP_TEXTURE_H_
 #define THIRD_PARTY_ARCORE_JAVA_COM_GOOGLE_AR_CORE_EXAMPLES_C_HELLOAR_CPP_TEXTURE_H_
 
+#include <cstdint>
+#include <vector>
+
 #include "arcore_c_api.h"
 
 namespace hello_ar {
@@ -38,10 +41,18 @@ class Texture {
 
   unsigned int GetHeight() { return height_; }
 
+  int64_t GetLatestDepthTimestampNs() const { return latest_depth_timestamp_ns_; }
+
+  const std::vector<uint8_t>& GetLatestDepthBytes() const {
+    return latest_depth_bytes_;
+  }
+
  private:
   unsigned int texture_id_ = 0;
   unsigned int width_ = 1;
   unsigned int height_ = 1;
+  int64_t latest_depth_timestamp_ns_ = 0;
+  std::vector<uint8_t> latest_depth_bytes_;
 };
 }  // namespace hello_ar
 

@@ -31,5 +31,22 @@ test --test_output=errors
 test --spawn_strategy=local
 
 try-import %workspace%/clang.bazelrc
-build:clang --action_env=LLVM_VERSION
 build:clang --host_copt="-Wno-deprecated-builtins"
+build:release --copt="-O3"
+build:release --copt=-DNDEBUG
+
+build:android --crosstool_top=@androidndk//:default_crosstool
+build:android --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+build:android --config=release
+build:android --linkopt=-landroid
+build:android --linkopt=-llog
+build:android --define=grpc_no_ares=true
+build:android --copt="-Wno-error=unused-variable"
+build:android --copt="-Wno-error=unused-parameter"
+build:android --copt="-Wno-error=unused-but-set-parameter"
+build:android --copt="-Wno-error=overloaded-virtual"
+
+build:android64 --config=android
+build:android64 --cpu=arm64-v8a
+build:android64 --cxxopt="-D__ARM_NEON__ -DENABLE_NEON -Ofast"
+build:android64 --@bazel_platforms//:platform=android_arm64
