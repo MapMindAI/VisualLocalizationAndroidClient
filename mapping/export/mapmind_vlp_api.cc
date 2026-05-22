@@ -29,6 +29,8 @@ constexpr char kServiceMethod[] = "/vlp.FrameStreamService/StreamFrames";
 constexpr char kFileMagic[] = "VLPREC1\n";
 constexpr uint32_t kFileVersion = 1;
 constexpr char kLogTag[] = "[mapmind_vlp_api]";
+constexpr uint32_t kFrameMagic = 0x564C5032;
+constexpr char kDepthTag[] = "DPT1";
 std::atomic<bool> g_logs_enabled{true};
 
 void Logf(const char* level, const char* fmt, ...) {
@@ -61,6 +63,28 @@ void WriteU64LE(std::ostream* os, uint64_t v) {
   b[6] = static_cast<char>((v >> 48) & 0xFFu);
   b[7] = static_cast<char>((v >> 56) & 0xFFu);
   os->write(b, 8);
+}
+
+void AppendU32LE(std::string* out, uint32_t v) {
+  char b[4];
+  b[0] = static_cast<char>(v & 0xFFu);
+  b[1] = static_cast<char>((v >> 8) & 0xFFu);
+  b[2] = static_cast<char>((v >> 16) & 0xFFu);
+  b[3] = static_cast<char>((v >> 24) & 0xFFu);
+  out->append(b, 4);
+}
+
+void AppendU64LE(std::string* out, uint64_t v) {
+  char b[8];
+  b[0] = static_cast<char>(v & 0xFFu);
+  b[1] = static_cast<char>((v >> 8) & 0xFFu);
+  b[2] = static_cast<char>((v >> 16) & 0xFFu);
+  b[3] = static_cast<char>((v >> 24) & 0xFFu);
+  b[4] = static_cast<char>((v >> 32) & 0xFFu);
+  b[5] = static_cast<char>((v >> 40) & 0xFFu);
+  b[6] = static_cast<char>((v >> 48) & 0xFFu);
+  b[7] = static_cast<char>((v >> 56) & 0xFFu);
+  out->append(b, 8);
 }
 
 class StreamState {
@@ -145,6 +169,34 @@ class StreamState {
     cv_.notify_all();
   }
 
+  void UpdateDepth(int64_t rgb_timestamp_ns, int width, int height,
+                   const uint8_t* depth_bytes, size_t depth_size) {
+    if (depth_bytes == nullptr || depth_size == 0 || width <= 0 || height <= 0 ||
+        rgb_timestamp_ns <= 0) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_depth_.rgb_timestamp_ns = rgb_timestamp_ns;
+    pending_depth_.width = width;
+    pending_depth_.height = height;
+    pending_depth_.bytes.assign(depth_bytes, depth_bytes + depth_size);
+    pending_depth_.depth_seq += 1;
+    pending_depth_.published = false;
+  }
+
+  bool ConsumeDepthForFrame(int64_t frame_timestamp_ns, int64_t* rgb_timestamp_ns, int* width,
+                            int* height, std::vector<uint8_t>* bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (pending_depth_.bytes.empty() || pending_depth_.published) return false;
+    if (frame_timestamp_ns < pending_depth_.rgb_timestamp_ns) return false;
+    if (rgb_timestamp_ns) *rgb_timestamp_ns = pending_depth_.rgb_timestamp_ns;
+    if (width) *width = pending_depth_.width;
+    if (height) *height = pending_depth_.height;
+    if (bytes) *bytes = pending_depth_.bytes;
+    pending_depth_.published = true;  // each depth publish once
+    return true;
+  }
+
  private:
   void StopRecordingLocked() {
     recording_.store(false);
@@ -177,6 +229,15 @@ class StreamState {
   std::atomic<bool> recording_{false};
   std::unique_ptr<std::ofstream> record_ofs_;
   int64_t record_start_ts_ns_ = -1;
+
+  struct PendingDepth {
+    int64_t rgb_timestamp_ns = 0;
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> bytes;
+    uint64_t depth_seq = 0;
+    bool published = true;
+  } pending_depth_;
 };
 
 class ByteStreamService final : public grpc::Service {
@@ -293,26 +354,48 @@ void PushFrameYuvNv21(int64_t frame_timestamp_ns, int width, int height,
   constexpr size_t kHeaderSize = 64;
   std::string payload(kHeaderSize + jpg_bytes.size(), '\0');
   char* h = &payload[0];
-  h[0] = 'V';
-  h[1] = 'L';
-  h[2] = 'P';
-  h[3] = '2';
-  std::memcpy(h + 8, &frame_timestamp_ns, sizeof(frame_timestamp_ns));
-  std::memcpy(h + 16, &width, sizeof(width));
-  std::memcpy(h + 20, &height, sizeof(height));
-  std::memcpy(h + 24, &fx, sizeof(fx));
-  std::memcpy(h + 28, &fy, sizeof(fy));
-  std::memcpy(h + 32, &cx, sizeof(cx));
-  std::memcpy(h + 36, &cy, sizeof(cy));
-  std::memcpy(h + 40, &qx, sizeof(qx));
-  std::memcpy(h + 44, &qy, sizeof(qy));
-  std::memcpy(h + 48, &qz, sizeof(qz));
-  std::memcpy(h + 52, &qw, sizeof(qw));
-  std::memcpy(h + 56, &tx, sizeof(tx));
-  std::memcpy(h + 60, &ty, sizeof(ty));
-  (void)tz;
+  std::memcpy(h + 0, &kFrameMagic, sizeof(kFrameMagic));
+  std::memcpy(h + 4, &frame_timestamp_ns, sizeof(frame_timestamp_ns));
+  std::memcpy(h + 12, &width, sizeof(width));
+  std::memcpy(h + 16, &height, sizeof(height));
+  std::memcpy(h + 20, &fx, sizeof(fx));
+  std::memcpy(h + 24, &fy, sizeof(fy));
+  std::memcpy(h + 28, &cx, sizeof(cx));
+  std::memcpy(h + 32, &cy, sizeof(cy));
+  std::memcpy(h + 36, &qx, sizeof(qx));
+  std::memcpy(h + 40, &qy, sizeof(qy));
+  std::memcpy(h + 44, &qz, sizeof(qz));
+  std::memcpy(h + 48, &qw, sizeof(qw));
+  std::memcpy(h + 52, &tx, sizeof(tx));
+  std::memcpy(h + 56, &ty, sizeof(ty));
+  std::memcpy(h + 60, &tz, sizeof(tz));
+
+  // Attach latest depth once when available.
+  auto& g = G();
+  if (g.stream_state) {
+    int64_t depth_rgb_ts = 0;
+    int depth_w = 0;
+    int depth_h = 0;
+    std::vector<uint8_t> depth_bytes;
+    if (g.stream_state->ConsumeDepthForFrame(frame_timestamp_ns, &depth_rgb_ts, &depth_w,
+                                             &depth_h, &depth_bytes)) {
+      payload.append(kDepthTag, 4);
+      AppendU64LE(&payload, static_cast<uint64_t>(depth_rgb_ts));
+      AppendU32LE(&payload, static_cast<uint32_t>(depth_w));
+      AppendU32LE(&payload, static_cast<uint32_t>(depth_h));
+      AppendU32LE(&payload, static_cast<uint32_t>(depth_bytes.size()));
+      payload.append(reinterpret_cast<const char*>(depth_bytes.data()), depth_bytes.size());
+    }
+  }
   std::memcpy(&payload[kHeaderSize], jpg_bytes.data(), jpg_bytes.size());
   PushFramePayload(frame_timestamp_ns, payload);
+}
+
+void PushDepthUpdate(int64_t rgb_timestamp_ns, int width, int height, const uint8_t* depth_bytes,
+                     size_t depth_size) {
+  auto& g = G();
+  if (!g.stream_state) return;
+  g.stream_state->UpdateDepth(rgb_timestamp_ns, width, height, depth_bytes, depth_size);
 }
 
 bool StartRecording(const std::string& output_file_path) {

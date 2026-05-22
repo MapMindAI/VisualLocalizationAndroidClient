@@ -176,6 +176,8 @@ class HelloArApplication {
   int da2_overlay_width_ = 0;
   int da2_overlay_height_ = 0;
   int64_t da2_overlay_uploaded_timestamp_ns_ = 0;
+  int64_t da2_depth_pushed_timestamp_ns_ = 0;
+  int64_t arcore_depth_pushed_timestamp_ns_ = 0;
   std::vector<GLfloat> da2_overlay_vertices_;
   std::vector<GLfloat> da2_overlay_uvs_;
 };

@@ -199,6 +199,15 @@ void HelloArApplication::UpdateDa2OverlayTexture() {
     return;
   }
 
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  // Publish depth once per updated DA2 output; associated with its RGB timestamp.
+  if (preview.timestamp_ns > da2_depth_pushed_timestamp_ns_) {
+    mapmind::vlp::PushDepthUpdate(preview.timestamp_ns, preview.width, preview.height,
+                                  preview.depth_rg.data(), preview.depth_rg.size());
+    da2_depth_pushed_timestamp_ns_ = preview.timestamp_ns;
+  }
+#endif
+
   glBindTexture(GL_TEXTURE_2D, da2_overlay_texture_id_);
   const bool resize_needed =
       (preview.width != da2_overlay_width_ || preview.height != da2_overlay_height_);
@@ -446,6 +455,25 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
   need_record_image = mapmind::vlp::Recording();
 #endif
 
+  int32_t is_depth_supported = 0;
+  ArSession_isDepthModeSupported(ar_session_, AR_DEPTH_MODE_AUTOMATIC, &is_depth_supported);
+  if (is_depth_supported && use_arcore_depth_source && !use_da2_depth_source) {
+    depth_texture_.UpdateWithDepthImageOnGlThread(*ar_session_, *ar_frame_);
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+    if (need_stream_image || need_record_image) {
+      const int64_t depth_ts_ns = depth_texture_.GetLatestDepthTimestampNs();
+      const std::vector<uint8_t>& depth_bytes = depth_texture_.GetLatestDepthBytes();
+      if (depth_ts_ns > arcore_depth_pushed_timestamp_ns_ && !depth_bytes.empty()) {
+        mapmind::vlp::PushDepthUpdate(
+            depth_ts_ns, static_cast<int>(depth_texture_.GetWidth()),
+            static_cast<int>(depth_texture_.GetHeight()), depth_bytes.data(),
+            depth_bytes.size());
+        arcore_depth_pushed_timestamp_ns_ = depth_ts_ns;
+      }
+    }
+#endif
+  }
+
   if (need_stream_image || need_record_image) {
     ArImage* image = nullptr;
     ArStatus image_status = ArFrame_acquireCameraImage(ar_session_, ar_frame_, &image);
@@ -630,13 +658,6 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
   // If the camera isn't tracking don't bother rendering other objects.
   if (camera_tracking_state != AR_TRACKING_STATE_TRACKING) {
     return;
-  }
-
-  int32_t is_depth_supported = 0;
-  ArSession_isDepthModeSupported(ar_session_, AR_DEPTH_MODE_AUTOMATIC,
-                                 &is_depth_supported);
-  if (is_depth_supported && !use_da2_depth_source) {
-    depth_texture_.UpdateWithDepthImageOnGlThread(*ar_session_, *ar_frame_);
   }
 
   // Get light estimation value.

@@ -13,6 +13,7 @@ FILE_VERSION = 1
 FILE_HEADER_STRUCT = struct.Struct("<8sI")
 ENTRY_HEADER_STRUCT = struct.Struct("<QI")  # rel_ns, payload_size
 FRAME_HEADER_STRUCT = struct.Struct("<IQII11f")
+FRAME_MAGIC = 0x564C5032
 FRAME_MAGIC_ASCII = b"VLP2"
 FRAME_HEADER_SIZE = 64
 
@@ -81,7 +82,7 @@ def _parse_frame_header(payload: bytes):
             tz,
         )
 
-    # Keep legacy support for header shape only.
+    # Legacy packed 64-byte header. This layout includes tz.
     (
         magic,
         timestamp_ns,
@@ -99,7 +100,7 @@ def _parse_frame_header(payload: bytes):
         ty,
         tz,
     ) = FRAME_HEADER_STRUCT.unpack_from(payload, 0)
-    return False, "legacy", magic, (
+    return (magic == FRAME_MAGIC), "legacy", magic, (
         timestamp_ns,
         width,
         height,

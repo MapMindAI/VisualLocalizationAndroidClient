@@ -28,6 +28,12 @@ void PushFrameYuvNv21(int64_t frame_timestamp_ns, int width, int height,
                       float cx, float cy, float qx, float qy, float qz, float qw,
                       float tx, float ty, float tz);
 
+// Publish latest computed depth (e.g. depth_rg, 16-bit mm packed as 2x8-bit RG)
+// associated with RGB timestamp. Depth will be attached once to a subsequent
+// frame payload when available.
+void PushDepthUpdate(int64_t rgb_timestamp_ns, int width, int height,
+                     const uint8_t* depth_bytes, size_t depth_size);
+
 // Record raw payload stream in VLPREC1 format.
 bool StartRecording(const std::string& output_file_path);
 bool Recording();

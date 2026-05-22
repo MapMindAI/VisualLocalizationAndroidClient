@@ -1,4 +1,30 @@
 
+## Live gRPC stream client
+
+Install dependencies:
+
+```bash
+pip install grpcio opencv-python numpy
+```
+
+Forward phone gRPC port:
+
+```bash
+adb forward tcp:50051 tcp:50051
+```
+
+Run client:
+
+```bash
+python3 python/ws_stream_client.py --host 127.0.0.1 --port 50051
+```
+
+Optional depth preview window (when payload includes `DPT1` trailer):
+
+```bash
+python3 python/ws_stream_client.py --host 127.0.0.1 --port 50051 --show-depth
+```
+
 ## Read a recorded VLPREC1 dataset
 
 Print frame metadata:
