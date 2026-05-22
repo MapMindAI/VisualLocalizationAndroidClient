@@ -50,7 +50,6 @@ public class HelloArActivity extends AppCompatActivity
   private static final int SNACKBAR_UPDATE_INTERVAL_MILLIS = 1000; // In milliseconds.
   private static final int DEBUGMSG_UPDATE_INTERVAL_MILLIS = 200; // In milliseconds.
   private static final int STREAM_UPDATE_INTERVAL_MILLIS = 100; // ~10 FPS target.
-  private static final int STREAM_SERVER_PORT = 50051;
   private static final int DEPTH_SOURCE_NONE = 0;
   private static final int DEPTH_SOURCE_ARCORE = 1;
   private static final int DEPTH_SOURCE_DA2 = 2;
@@ -79,7 +78,6 @@ public class HelloArActivity extends AppCompatActivity
   private Snackbar snackbar;
   private Snackbar da2LoadingSnackbar;
   private boolean wasDa2Loading = false;
-  private GrpcFrameStreamServer grpcFrameStreamServer;
   // private Handler planeStatusCheckingHandler;
   // private final Runnable planeStatusCheckingRunnable =
   //     new Runnable() {
@@ -133,15 +131,6 @@ public class HelloArActivity extends AppCompatActivity
           try {
             if (!renderEnabled) {
               surfaceView.requestRender();
-            }
-            boolean hasGrpcClient =
-                grpcFrameStreamServer != null && grpcFrameStreamServer.hasSubscribers();
-            boolean shouldCaptureStreamData =
-                hasGrpcClient
-                    || (grpcFrameStreamServer != null && grpcFrameStreamServer.isRecordingEnabled());
-            JniInterface.setStreamConsumerActive(nativeApplication, shouldCaptureStreamData);
-            if (grpcFrameStreamServer != null) {
-              grpcFrameStreamServer.publishLatestFrame(nativeApplication);
             }
             updateDa2LoadingUi();
             if (!renderEnabled && JniInterface.hasLatestStreamFrame(nativeApplication)) {
@@ -211,10 +200,6 @@ public class HelloArActivity extends AppCompatActivity
 
     JniInterface.assetManager = getAssets();
     nativeApplication = JniInterface.createNativeApplication(getAssets());
-    grpcFrameStreamServer = new GrpcFrameStreamServer(STREAM_SERVER_PORT);
-    grpcFrameStreamServer.start();
-    Log.i(TAG, "gRPC stream server started at 0.0.0.0:" + STREAM_SERVER_PORT);
-
     // planeStatusCheckingHandler = new Handler();
     debugStatusCheckingHandler = new Handler();
     streamStatusCheckingHandler = new Handler();
@@ -262,7 +247,7 @@ public class HelloArActivity extends AppCompatActivity
         }
         Log.i("Mobili", "Create directory: " + record_folder);
         String recordFile = new File(recordFolder, "vlp_stream.rec").getAbsolutePath();
-        boolean ok = grpcFrameStreamServer != null && grpcFrameStreamServer.startRecording(recordFile);
+        boolean ok = JniInterface.onStartRec(recordFile) != 0;
         displayInSnackbar(ok ? ("Start Recording " + recordFile) : "Start Recording failed");
       }
     });
@@ -271,9 +256,7 @@ public class HelloArActivity extends AppCompatActivity
     stoprecButton.setOnClickListener(new View.OnClickListener() {
       @Override
       public void onClick(View v) {
-        if (grpcFrameStreamServer != null) {
-          grpcFrameStreamServer.stopRecording();
-        }
+        JniInterface.onStopRec();
         displayInSnackbar("Stop Recoding");
       }
     });
@@ -391,16 +374,6 @@ public class HelloArActivity extends AppCompatActivity
   @Override
   public void onDestroy() {
     super.onDestroy();
-
-    if (grpcFrameStreamServer != null) {
-      try {
-        grpcFrameStreamServer.stop(1000);
-      } catch (InterruptedException e) {
-        Log.e(TAG, "Failed to stop gRPC server cleanly", e);
-        Thread.currentThread().interrupt();
-      }
-      grpcFrameStreamServer = null;
-    }
 
     // Synchronized to avoid racing onDrawFrame.
     synchronized (this) {

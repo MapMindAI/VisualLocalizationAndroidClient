@@ -40,12 +40,9 @@ include_directories(${CMAKE_SOURCE_DIR}/../../libs/mnn/include)
 add_library(MNN SHARED IMPORTED)
 set_target_properties(MNN PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mnn/lib/${ANDROID_ABI}/libMNN.so)
 
-option(ENABLE_MOBILI_VLP "Enable linking and usage of mobili::vlp library" OFF)
-if(ENABLE_MOBILI_VLP)
-  include_directories(${CMAKE_SOURCE_DIR}/../../libs/mobili_vlp_api/include)
-  add_library(mobili_vlp_api SHARED IMPORTED)
-  set_target_properties(mobili_vlp_api PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mobili_vlp_api/lib/${ANDROID_ABI}/libmobili_vlp_api.so)
-endif()
+include_directories(${CMAKE_SOURCE_DIR}/../../libs/mapmind_vlp_api/include)
+add_library(mapmind_vlp_api SHARED IMPORTED)
+set_target_properties(mapmind_vlp_api PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../../libs/mapmind_vlp_api/${ANDROID_ABI}/libmapmind_vlp_api.so)
 
 
 # This is the main app library.
@@ -64,7 +61,7 @@ add_library(hello_ar_native SHARED
 target_include_directories(hello_ar_native PRIVATE
                            src/main/cpp)
 target_compile_definitions(hello_ar_native PRIVATE
-                           HELLO_AR_ENABLE_MOBILI_VLP=$<BOOL:${ENABLE_MOBILI_VLP}>)
+                           HELLO_AR_ENABLE_MAPMIND_VLP=1)
 target_link_libraries(hello_ar_native
                       android
                       log
@@ -72,8 +69,5 @@ target_link_libraries(hello_ar_native
                       glm
                       arcore
                       opencv
-                      MNN)
-
-if(ENABLE_MOBILI_VLP)
-  target_link_libraries(hello_ar_native mobili_vlp_api)
-endif()
+                      MNN
+                      mapmind_vlp_api)

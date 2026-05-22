@@ -40,8 +40,8 @@
 #include "texture.h"
 #include "util.h"
 
-#ifndef HELLO_AR_ENABLE_MOBILI_VLP
-#define HELLO_AR_ENABLE_MOBILI_VLP 0
+#ifndef HELLO_AR_ENABLE_MAPMIND_VLP
+#define HELLO_AR_ENABLE_MAPMIND_VLP 0
 #endif
 
 
@@ -92,7 +92,6 @@ class HelloArApplication {
   void OnSettingsChange(bool is_instant_placement_enabled);
   void setRenderEnabled(bool enabled) { render_enabled_ = enabled; }
   void setSceneContentEnabled(bool enabled) { scene_content_enabled_ = enabled; }
-  void setStreamConsumerActive(bool active) { stream_consumer_active_ = active; }
   void setDepthSource(int source) { depth_source_.store(source); }
   bool isDa2Ready() const;
 
@@ -136,10 +135,6 @@ class HelloArApplication {
   PlaneRenderer plane_renderer_;
   ObjRenderer andy_renderer_;
 
-  float world_mesh_color_[4];
-#if HELLO_AR_ENABLE_MOBILI_VLP
-  ObjWareRenderer world_mesh_renderer_;
-#endif  // #if HELLO_AR_ENABLE_MOBILI_VLP
   Texture depth_texture_;
 
   int32_t plane_count_ = 0;
@@ -174,7 +169,6 @@ class HelloArApplication {
   bool has_latest_stream_frame_ = false;
   bool render_enabled_ = true;
   bool scene_content_enabled_ = true;
-  bool stream_consumer_active_ = false;
   std::atomic<int> depth_source_{0};  // 0=None, 1=ARCore, 2=DA2
 
   std::unique_ptr<Da2Pipeline> da2_pipeline_;

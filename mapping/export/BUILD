@@ -15,6 +15,7 @@ cc_library(
     deps = [
         "@com_github_grpc_grpc//:grpc++",
         "//mapping/common:utils",
+        "@opencv",
     ],
     alwayslink = 1,
 )

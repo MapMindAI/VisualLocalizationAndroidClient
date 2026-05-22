@@ -5,23 +5,41 @@
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/impl/codegen/method_handler.h>
 #include <grpcpp/impl/service_type.h>
-#include <grpc/support/log.h>
 
 #include <atomic>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 #include <condition_variable>
 #include <cstdint>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
-namespace mapmind::vlp {
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+
+namespace mapmind {
+namespace vlp {
 namespace {
 
 constexpr char kServiceMethod[] = "/vlp.FrameStreamService/StreamFrames";
 constexpr char kFileMagic[] = "VLPREC1\n";
 constexpr uint32_t kFileVersion = 1;
 constexpr char kLogTag[] = "[mapmind_vlp_api]";
+std::atomic<bool> g_logs_enabled{true};
+
+void Logf(const char* level, const char* fmt, ...) {
+  if (!g_logs_enabled.load()) return;
+  std::printf("%s %s ", kLogTag, level);
+  va_list args;
+  va_start(args, fmt);
+  std::vprintf(fmt, args);
+  va_end(args);
+  std::printf("\n");
+}
 
 void WriteU32LE(std::ostream* os, uint32_t v) {
   char b[4];
@@ -49,7 +67,7 @@ class StreamState {
  public:
   void PublishFrame(int64_t frame_timestamp_ns, const std::string& payload) {
     if (payload.empty()) {
-      gpr_log(GPR_INFO, "%s Drop empty frame payload", kLogTag);
+      Logf("I", "Drop empty frame payload");
       return;
     }
     std::lock_guard<std::mutex> lock(mutex_);
@@ -62,7 +80,7 @@ class StreamState {
 
   grpc::Status StreamFrames(grpc::ServerContext* context, const grpc::ByteBuffer*,
                             grpc::ServerWriter<grpc::ByteBuffer>* writer) {
-    gpr_log(GPR_INFO, "%s Frame stream connected", kLogTag);
+    Logf("I", "Frame stream connected");
     uint64_t seen_seq = 0;
     for (;;) {
       std::string payload;
@@ -72,7 +90,7 @@ class StreamState {
           return shutting_down_.load() || context->IsCancelled() || frame_seq_ > seen_seq;
         });
         if (shutting_down_.load() || context->IsCancelled()) {
-          gpr_log(GPR_INFO, "%s Frame stream disconnected", kLogTag);
+          Logf("I", "Frame stream disconnected");
           return grpc::Status::OK;
         }
         seen_seq = frame_seq_;
@@ -82,7 +100,7 @@ class StreamState {
       grpc::Slice slice(payload.data(), payload.size());
       grpc::ByteBuffer out(&slice, 1);
       if (!writer->Write(out)) {
-        gpr_log(GPR_INFO, "%s Frame stream closed by peer", kLogTag);
+        Logf("I", "Frame stream closed by peer");
         return grpc::Status::OK;
       }
     }
@@ -94,8 +112,7 @@ class StreamState {
     record_ofs_ = std::make_unique<std::ofstream>(output_file_path,
                                                   std::ios::binary | std::ios::trunc);
     if (!record_ofs_ || !record_ofs_->good()) {
-      gpr_log(GPR_ERROR, "%s Failed to open recording file: %s", kLogTag,
-              output_file_path.c_str());
+      Logf("E", "Failed to open recording file: %s", output_file_path.c_str());
       record_ofs_.reset();
       return false;
     }
@@ -103,21 +120,20 @@ class StreamState {
     WriteU32LE(record_ofs_.get(), kFileVersion);
     record_ofs_->flush();
     if (!record_ofs_->good()) {
-      gpr_log(GPR_ERROR, "%s Failed to initialize recording file: %s", kLogTag,
-              output_file_path.c_str());
+      Logf("E", "Failed to initialize recording file: %s", output_file_path.c_str());
       StopRecordingLocked();
       return false;
     }
     recording_.store(true);
     record_start_ts_ns_ = -1;
-    gpr_log(GPR_INFO, "%s Recording started: %s", kLogTag, output_file_path.c_str());
+    Logf("I", "Recording started: %s", output_file_path.c_str());
     return true;
   }
 
   void StopRecording() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (recording_.load()) {
-      gpr_log(GPR_INFO, "%s Recording stopped", kLogTag);
+      Logf("I", "Recording stopped");
     }
     StopRecordingLocked();
   }
@@ -201,7 +217,7 @@ bool StartGrpcServer(int port) {
   auto& g = G();
   std::lock_guard<std::mutex> lock(g.mutex);
   if (g.running.load()) {
-    gpr_log(GPR_INFO, "%s gRPC server already running", kLogTag);
+    Logf("I", "gRPC server already running");
     return true;
   }
 
@@ -214,13 +230,13 @@ bool StartGrpcServer(int port) {
   builder.RegisterService(g.service.get());
   g.server = builder.BuildAndStart();
   if (!g.server) {
-    gpr_log(GPR_ERROR, "%s Failed to start gRPC server on port %d", kLogTag, port);
+    Logf("E", "Failed to start gRPC server on port %d", port);
     g.service.reset();
     g.stream_state.reset();
     return false;
   }
   g.running.store(true);
-  gpr_log(GPR_INFO, "%s gRPC server started on port %d", kLogTag, port);
+  Logf("I", "gRPC server started on port %d", port);
   return true;
 }
 
@@ -228,10 +244,10 @@ void StopGrpcServer() {
   auto& g = G();
   std::lock_guard<std::mutex> lock(g.mutex);
   if (!g.running.load()) {
-    gpr_log(GPR_INFO, "%s gRPC server already stopped", kLogTag);
+    Logf("I", "gRPC server already stopped");
     return;
   }
-  gpr_log(GPR_INFO, "%s Stopping gRPC server", kLogTag);
+  Logf("I", "Stopping gRPC server");
   if (g.stream_state) g.stream_state->SetShuttingDown();
   if (g.server) g.server->Shutdown();
   if (g.server) g.server->Wait();
@@ -239,7 +255,7 @@ void StopGrpcServer() {
   g.service.reset();
   g.stream_state.reset();
   g.running.store(false);
-  gpr_log(GPR_INFO, "%s gRPC server stopped", kLogTag);
+  Logf("I", "gRPC server stopped");
 }
 
 bool HasGrpcServer() { return G().running.load(); }
@@ -248,6 +264,55 @@ void PushFramePayload(int64_t frame_timestamp_ns, const std::string& payload) {
   auto& g = G();
   if (!g.running.load() || !g.stream_state) return;
   g.stream_state->PublishFrame(frame_timestamp_ns, payload);
+}
+
+void PushFrameYuvNv21(int64_t frame_timestamp_ns, int width, int height,
+                      const uint8_t* yuv_nv21, size_t yuv_nv21_size, float fx, float fy,
+                      float cx, float cy, float qx, float qy, float qz, float qw,
+                      float tx, float ty, float tz) {
+  if (width <= 0 || height <= 0 || yuv_nv21 == nullptr || yuv_nv21_size == 0) return;
+  const size_t expected_nv21_size =
+      static_cast<size_t>(width) * static_cast<size_t>(height) * 3 / 2;
+  if (yuv_nv21_size < expected_nv21_size) {
+    Logf("E", "Invalid NV21 buffer size: got=%zu expected>=%zu", yuv_nv21_size,
+         expected_nv21_size);
+    return;
+  }
+
+  cv::Mat nv21(height + height / 2, width, CV_8UC1, const_cast<uint8_t*>(yuv_nv21));
+  cv::Mat bgr;
+  cv::cvtColor(nv21, bgr, cv::COLOR_YUV2BGR_NV21);
+  std::vector<uint8_t> jpg_bytes;
+  const std::vector<int> encode_params = {cv::IMWRITE_JPEG_QUALITY, 80};
+  if (!cv::imencode(".jpg", bgr, jpg_bytes, encode_params) || jpg_bytes.empty()) {
+    Logf("E", "JPEG encode failed for frame ts=%lld",
+         static_cast<long long>(frame_timestamp_ns));
+    return;
+  }
+
+  constexpr size_t kHeaderSize = 64;
+  std::string payload(kHeaderSize + jpg_bytes.size(), '\0');
+  char* h = &payload[0];
+  h[0] = 'V';
+  h[1] = 'L';
+  h[2] = 'P';
+  h[3] = '2';
+  std::memcpy(h + 8, &frame_timestamp_ns, sizeof(frame_timestamp_ns));
+  std::memcpy(h + 16, &width, sizeof(width));
+  std::memcpy(h + 20, &height, sizeof(height));
+  std::memcpy(h + 24, &fx, sizeof(fx));
+  std::memcpy(h + 28, &fy, sizeof(fy));
+  std::memcpy(h + 32, &cx, sizeof(cx));
+  std::memcpy(h + 36, &cy, sizeof(cy));
+  std::memcpy(h + 40, &qx, sizeof(qx));
+  std::memcpy(h + 44, &qy, sizeof(qy));
+  std::memcpy(h + 48, &qz, sizeof(qz));
+  std::memcpy(h + 52, &qw, sizeof(qw));
+  std::memcpy(h + 56, &tx, sizeof(tx));
+  std::memcpy(h + 60, &ty, sizeof(ty));
+  (void)tz;
+  std::memcpy(&payload[kHeaderSize], jpg_bytes.data(), jpg_bytes.size());
+  PushFramePayload(frame_timestamp_ns, payload);
 }
 
 bool StartRecording(const std::string& output_file_path) {
@@ -267,4 +332,7 @@ void StopRecording() {
   if (g.stream_state) g.stream_state->StopRecording();
 }
 
-}  // namespace mapmind::vlp
+void SetLogsEnabled(bool enabled) { g_logs_enabled.store(enabled); }
+
+}  // namespace vlp
+}  // namespace mapmind
