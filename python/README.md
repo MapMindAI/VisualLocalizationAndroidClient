@@ -16,14 +16,11 @@ adb forward tcp:50051 tcp:50051
 Run client:
 
 ```bash
-python3 python/ws_stream_client.py --host 127.0.0.1 --port 50051
-```
-
-Optional depth preview window (when payload includes `DPT1` trailer):
-
-```bash
 python3 python/ws_stream_client.py --host 127.0.0.1 --port 50051 --show-depth
 ```
+
+https://github.com/user-attachments/assets/4f305b9f-1916-4a6f-b0e7-45c40ce3d9f1
+
 
 ## Read a recorded VLPREC1 dataset
 
