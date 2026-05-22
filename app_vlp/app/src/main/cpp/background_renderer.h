@@ -43,6 +43,10 @@ class BackgroundRenderer {
   //  depth image.
   void Draw(const ArSession* session, const ArFrame* frame,
             bool debug_show_depth_map);
+  void DrawDepthPanel(const ArSession* session, const ArFrame* frame, float x0,
+                      float y0, float x1, float y1);
+  void DrawDepthPanelWithTexture(GLuint depth_texture_id, const float* tex_uvs,
+                                 float x0, float y0, float x1, float y1);
 
   // Returns the generated texture name for the GL_TEXTURE_EXTERNAL_OES target.
   GLuint GetTextureId() const;

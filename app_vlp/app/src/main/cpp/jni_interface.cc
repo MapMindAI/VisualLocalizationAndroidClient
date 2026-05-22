@@ -78,9 +78,25 @@ JNI_METHOD(void, setRenderEnabled)
   native(native_application)->setRenderEnabled(enabled == JNI_TRUE);
 }
 
+JNI_METHOD(void, setSceneContentEnabled)
+(JNIEnv *, jclass, jlong native_application, jboolean enabled) {
+  native(native_application)->setSceneContentEnabled(enabled == JNI_TRUE);
+}
+
 JNI_METHOD(void, setStreamConsumerActive)
 (JNIEnv *, jclass, jlong native_application, jboolean active) {
   native(native_application)->setStreamConsumerActive(active == JNI_TRUE);
+}
+
+JNI_METHOD(void, setDepthSource)
+(JNIEnv *, jclass, jlong native_application, jint depth_source) {
+  native(native_application)->setDepthSource(static_cast<int>(depth_source));
+}
+
+JNI_METHOD(jboolean, isDa2Ready)
+(JNIEnv *, jclass, jlong native_application) {
+  return static_cast<jboolean>(
+      native(native_application)->isDa2Ready() ? JNI_TRUE : JNI_FALSE);
 }
 
 JNI_METHOD(void, destroyNativeApplication)

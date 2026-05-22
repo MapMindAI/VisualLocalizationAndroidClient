@@ -25,20 +25,37 @@
       android:layout_height="match_parent"
       android:layout_gravity="top"/>
 
-  <ImageButton
-    android:id="@+id/settings_button"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:layout_alignParentEnd="true"
-    android:layout_alignParentTop="true"
-    android:layout_margin="25dp"
-    android:src="@drawable/ic_settings"
-    android:background="@android:color/transparent"/>
+  <LinearLayout
+      android:id="@+id/top_controls"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_alignParentTop="true"
+      android:layout_margin="12dp"
+      android:orientation="horizontal">
+      <Button
+          android:id="@+id/depth_source_button"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="Depth: None"
+          android:textAllCaps="false" />
+      <View
+          android:layout_width="8dp"
+          android:layout_height="0dp" />
+      <Button
+          android:id="@+id/instant_placement_button"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="Instant: OFF"
+          android:textAllCaps="false" />
+  </LinearLayout>
 
   <TextView
       android:id="@+id/msg"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
+      android:layout_below="@id/top_controls"
       android:textSize="12sp" />
 
   <LinearLayout
@@ -85,6 +102,16 @@
           android:layout_height="wrap_content"
           android:layout_weight="1"
           android:text="Disable Render"
+          android:textAllCaps="false" />
+      <View
+          android:layout_width="5dp"
+          android:layout_height="0dp" />
+      <Button
+          android:id="@+id/scene_toggle_button"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="Hide Scene"
           android:textAllCaps="false" />
   </LinearLayout>
 

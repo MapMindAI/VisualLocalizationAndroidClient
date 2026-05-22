@@ -2,6 +2,9 @@
 
 Android AR app module with optional `mobili::vlp` integration and a built-in gRPC stream server.
 
+https://github.com/user-attachments/assets/0202e980-5f74-47c4-9e53-88ddcdbd4d77
+
+
 ## gRPC stream
 
 - Server endpoint: `<phone-ip>:50051` (plaintext gRPC)

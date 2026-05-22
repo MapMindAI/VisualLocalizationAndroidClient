@@ -206,7 +206,7 @@
       geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
       const mat = new THREE.PointsMaterial({
-        size:0.02,
+        size:0.04,
         vertexColors:true,
       });
       depthCloudObj = new THREE.Points(geom, mat);
