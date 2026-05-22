@@ -25,13 +25,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
 import android.view.GestureDetector;
-import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.ImageButton;
-import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
@@ -54,7 +51,9 @@ public class HelloArActivity extends AppCompatActivity
   private static final int DEBUGMSG_UPDATE_INTERVAL_MILLIS = 200; // In milliseconds.
   private static final int STREAM_UPDATE_INTERVAL_MILLIS = 33; // ~30 FPS target.
   private static final int STREAM_SERVER_PORT = 50051;
-  private static final int NUM_DEPTH_SETTINGS_CHECKBOXES = 2;
+  private static final int DEPTH_SOURCE_NONE = 0;
+  private static final int DEPTH_SOURCE_ARCORE = 1;
+  private static final int DEPTH_SOURCE_DA2 = 2;
   private static final int NUM_INSTANT_PLACEMENT_SETTINGS_CHECKBOXES = 1;
 
   private GLSurfaceView surfaceView;
@@ -65,7 +64,7 @@ public class HelloArActivity extends AppCompatActivity
   private int viewportHeight;
 
   private final DepthSettings depthSettings = new DepthSettings();
-  private boolean[] depthSettingsMenuDialogCheckboxes = new boolean[NUM_DEPTH_SETTINGS_CHECKBOXES];
+  private int selectedDepthSource = DEPTH_SOURCE_NONE;
 
   private final InstantPlacementSettings instantPlacementSettings = new InstantPlacementSettings();
   private boolean[] instantPlacementSettingsMenuDialogCheckboxes =
@@ -112,7 +111,10 @@ public class HelloArActivity extends AppCompatActivity
                 snackbar.dismiss();
               }
               snackbar = null;
-              msgView.setText(JniInterface.getDebugMessage(nativeApplication));
+              msgView.setText(
+                  JniInterface.getDebugMessage(nativeApplication)
+                      + "\nDepth Source: "
+                      + depthSourceLabel());
             }
             debugStatusCheckingHandler.postDelayed(
                 debugStatusCheckingRunnable, DEBUGMSG_UPDATE_INTERVAL_MILLIS);
@@ -146,7 +148,8 @@ public class HelloArActivity extends AppCompatActivity
                 msgView.setText(
                     String.format(
                         Locale.US,
-                        "Render OFF\nq=(%.4f, %.4f, %.4f, %.4f)\nt=(%.4f, %.4f, %.4f)\nts=%d",
+                        "Render OFF\nDepth Source: %s\nq=(%.4f, %.4f, %.4f, %.4f)\nt=(%.4f, %.4f, %.4f)\nts=%d",
+                        depthSourceLabel(),
                         pose[0], pose[1], pose[2], pose[3], pose[4], pose[5], pose[6], tsData[0]));
               }
             }
@@ -211,6 +214,7 @@ public class HelloArActivity extends AppCompatActivity
 
     depthSettings.onCreate(this);
     instantPlacementSettings.onCreate(this);
+    JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
 
     File externalStorage = new File(getExternalFilesDir(null), "myfile.txt");
     Log.i("Mobili", externalStorage.getAbsolutePath());
@@ -284,30 +288,29 @@ public class HelloArActivity extends AppCompatActivity
       }
     });
 
-    ImageButton settingsButton = findViewById(R.id.settings_button);
-    settingsButton.setOnClickListener(
+    final Button depthSourceButton = findViewById(R.id.depth_source_button);
+    final Button instantPlacementButton = findViewById(R.id.instant_placement_button);
+    updateTopControlLabels(depthSourceButton, instantPlacementButton);
+    depthSourceButton.setOnClickListener(
         new View.OnClickListener() {
           @Override
           public void onClick(View v) {
-            PopupMenu popup = new PopupMenu(HelloArActivity.this, v);
-            popup.setOnMenuItemClickListener(HelloArActivity.this::settingsMenuClick);
-            popup.inflate(R.menu.settings_menu);
-            popup.show();
+            selectedDepthSource = (selectedDepthSource + 1) % 3;
+            JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
+            updateTopControlLabels(depthSourceButton, instantPlacementButton);
+          }
+        });
+    instantPlacementButton.setOnClickListener(
+        new View.OnClickListener() {
+          @Override
+          public void onClick(View v) {
+            boolean enabled = !instantPlacementSettings.isInstantPlacementEnabled();
+            instantPlacementSettings.setInstantPlacementEnabled(enabled);
+            JniInterface.onSettingsChange(nativeApplication, enabled);
+            updateTopControlLabels(depthSourceButton, instantPlacementButton);
           }
         });
     // TODO(yeliu): download tsdf mesh
-  }
-
-  /** Menu button to launch feature specific settings. */
-  protected boolean settingsMenuClick(MenuItem item) {
-    if (item.getItemId() == R.id.depth_settings) {
-      launchDepthSettingsMenuDialog();
-      return true;
-    } else if (item.getItemId() == R.id.instant_placement_settings) {
-      launchInstantPlacementSettingsMenuDialog();
-      return true;
-    }
-    return false;
   }
 
   @Override
@@ -324,6 +327,7 @@ public class HelloArActivity extends AppCompatActivity
     try {
       JniInterface.onSettingsChange(
         nativeApplication, instantPlacementSettings.isInstantPlacementEnabled());
+      JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
       JniInterface.setRenderEnabled(nativeApplication, renderEnabled);
       surfaceView.setRenderMode(
           renderEnabled
@@ -430,8 +434,8 @@ public class HelloArActivity extends AppCompatActivity
       }
       JniInterface.onGlSurfaceDrawFrame(
           nativeApplication,
-          depthSettings.depthColorVisualizationEnabled(),
-          depthSettings.useDepthForOcclusion());
+          false,
+          false);
     }
   }
 
@@ -514,54 +518,52 @@ public class HelloArActivity extends AppCompatActivity
 
   /** Shows checkboxes to the user to facilitate toggling of depth-based effects. */
   private void launchDepthSettingsMenuDialog() {
-    // Retrieves the current settings to show in the checkboxes.
-    resetSettingsMenuDialogCheckboxes();
-
-    // Shows the dialog to the user.
     Resources resources = getResources();
-    boolean isDepthSupported = JniInterface.isDepthSupported(nativeApplication);
-    if (isDepthSupported) {
-      // With depth support, the user can select visualization options.
-      new AlertDialog.Builder(this)
-          .setTitle(R.string.options_title_with_depth)
-          .setMultiChoiceItems(
-              resources.getStringArray(R.array.depth_options_array),
-              depthSettingsMenuDialogCheckboxes,
-              (DialogInterface dialog, int which, boolean isChecked) ->
-                  depthSettingsMenuDialogCheckboxes[which] = isChecked)
-          .setPositiveButton(
-              R.string.done,
-              (DialogInterface dialogInterface, int which) -> applySettingsMenuDialogCheckboxes())
-          .setNegativeButton(
-              android.R.string.cancel,
-              (DialogInterface dialog, int which) -> resetSettingsMenuDialogCheckboxes())
-          .show();
-    } else {
-      // Without depth support, no settings are available.
-      new AlertDialog.Builder(this)
-          .setTitle(R.string.options_title_without_depth)
-          .setPositiveButton(
-              R.string.done,
-              (DialogInterface dialogInterface, int which) -> applySettingsMenuDialogCheckboxes())
-          .show();
-    }
+    final int[] pendingSource = {selectedDepthSource};
+    new AlertDialog.Builder(this)
+        .setTitle(R.string.options_title_with_depth)
+        .setSingleChoiceItems(
+            resources.getStringArray(R.array.depth_source_options_array),
+            selectedDepthSource,
+            (DialogInterface dialog, int which) -> pendingSource[0] = which)
+        .setPositiveButton(
+            R.string.done,
+            (DialogInterface dialogInterface, int which) -> {
+              selectedDepthSource = pendingSource[0];
+              applySettingsMenuDialogCheckboxes();
+            })
+        .setNegativeButton(android.R.string.cancel, null)
+        .show();
   }
 
   private void applySettingsMenuDialogCheckboxes() {
-    depthSettings.setUseDepthForOcclusion(depthSettingsMenuDialogCheckboxes[0]);
-    depthSettings.setDepthColorVisualizationEnabled(depthSettingsMenuDialogCheckboxes[1]);
     instantPlacementSettings.setInstantPlacementEnabled(
         instantPlacementSettingsMenuDialogCheckboxes[0]);
 
     JniInterface.onSettingsChange(
         nativeApplication, instantPlacementSettings.isInstantPlacementEnabled());
+    JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
   }
 
   private void resetSettingsMenuDialogCheckboxes() {
-    depthSettingsMenuDialogCheckboxes[0] = depthSettings.useDepthForOcclusion();
-    depthSettingsMenuDialogCheckboxes[1] = depthSettings.depthColorVisualizationEnabled();
     instantPlacementSettingsMenuDialogCheckboxes[0] =
         instantPlacementSettings.isInstantPlacementEnabled();
+  }
+
+  private String depthSourceLabel() {
+    if (selectedDepthSource == DEPTH_SOURCE_DA2) {
+      return "DA2";
+    }
+    if (selectedDepthSource == DEPTH_SOURCE_ARCORE) {
+      return "ARCore";
+    }
+    return "None";
+  }
+
+  private void updateTopControlLabels(Button depthSourceButton, Button instantPlacementButton) {
+    depthSourceButton.setText("Depth: " + depthSourceLabel());
+    instantPlacementButton.setText(
+        "Instant: " + (instantPlacementSettings.isInstantPlacementEnabled() ? "ON" : "OFF"));
   }
 
   // DisplayListener methods

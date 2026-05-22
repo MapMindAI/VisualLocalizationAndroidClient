@@ -24,6 +24,7 @@
 
 #include <memory>
 #include <mutex>
+#include <atomic>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -91,6 +92,7 @@ class HelloArApplication {
   void OnSettingsChange(bool is_instant_placement_enabled);
   void setRenderEnabled(bool enabled) { render_enabled_ = enabled; }
   void setStreamConsumerActive(bool active) { stream_consumer_active_ = active; }
+  void setDepthSource(int source) { depth_source_.store(source); }
 
   int PublishImage();
   bool popDebugMessage();
@@ -170,13 +172,10 @@ class HelloArApplication {
   bool has_latest_stream_frame_ = false;
   bool render_enabled_ = true;
   bool stream_consumer_active_ = false;
+  std::atomic<int> depth_source_{0};  // 0=None, 1=ARCore, 2=DA2
 
   std::unique_ptr<Da2Pipeline> da2_pipeline_;
   GLuint da2_overlay_texture_id_ = 0;
-  GLuint da2_overlay_program_ = 0;
-  GLint da2_overlay_texture_uniform_ = -1;
-  GLint da2_overlay_position_attrib_ = -1;
-  GLint da2_overlay_tex_coord_attrib_ = -1;
   int da2_overlay_width_ = 0;
   int da2_overlay_height_ = 0;
   int64_t da2_overlay_uploaded_timestamp_ns_ = 0;

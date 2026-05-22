@@ -80,6 +80,7 @@ public class JniInterface {
       long nativeApplication, boolean isInstantPlacementEnabled);
   public static native void setRenderEnabled(long nativeApplication, boolean enabled);
   public static native void setStreamConsumerActive(long nativeApplication, boolean active);
+  public static native void setDepthSource(long nativeApplication, int depthSource);
 
   public static Bitmap loadImage(String imageName) {
 

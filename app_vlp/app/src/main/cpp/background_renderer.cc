@@ -40,6 +40,20 @@ constexpr char kDepthVisualizerFragmentShaderFilename[] =
 constexpr char kDepthColorPaletteImageFilename[] =
     "models/depth_color_palette.png";
 
+void UpdateUvsIfNeeded(const ArSession* session, const ArFrame* frame,
+                       bool* uvs_initialized, float* transformed_uvs) {
+  constexpr int kPanelVerticesCount = 4;
+  int32_t geometry_changed = 0;
+  ArFrame_getDisplayGeometryChanged(session, frame, &geometry_changed);
+  if (geometry_changed != 0 || !(*uvs_initialized)) {
+    ArFrame_transformCoordinates2d(
+        session, frame, AR_COORDINATES_2D_OPENGL_NORMALIZED_DEVICE_COORDINATES,
+        kPanelVerticesCount, kVertices,
+        AR_COORDINATES_2D_TEXTURE_NORMALIZED, transformed_uvs);
+    *uvs_initialized = true;
+  }
+}
+
 }  // namespace
 
 void BackgroundRenderer::InitializeGlContent(AAssetManager* asset_manager,
@@ -96,17 +110,7 @@ void BackgroundRenderer::Draw(const ArSession* session, const ArFrame* frame,
   static_assert(std::extent<decltype(kVertices)>::value == kNumVertices * 2,
                 "Incorrect kVertices length");
 
-  // If display rotation changed (also includes view size change), we need to
-  // re-query the uv coordinates for the on-screen portion of the camera image.
-  int32_t geometry_changed = 0;
-  ArFrame_getDisplayGeometryChanged(session, frame, &geometry_changed);
-  if (geometry_changed != 0 || !uvs_initialized_) {
-    ArFrame_transformCoordinates2d(
-        session, frame, AR_COORDINATES_2D_OPENGL_NORMALIZED_DEVICE_COORDINATES,
-        kNumVertices, kVertices, AR_COORDINATES_2D_TEXTURE_NORMALIZED,
-        transformed_uvs_);
-    uvs_initialized_ = true;
-  }
+  UpdateUvsIfNeeded(session, frame, &uvs_initialized_, transformed_uvs_);
 
   int64_t frame_timestamp;
   ArFrame_getTimestamp(session, frame, &frame_timestamp);
@@ -172,5 +176,52 @@ void BackgroundRenderer::Draw(const ArSession* session, const ArFrame* frame,
 }
 
 GLuint BackgroundRenderer::GetTextureId() const { return camera_texture_id_; }
+
+void BackgroundRenderer::DrawDepthPanel(const ArSession* session,
+                                        const ArFrame* frame, float x0,
+                                        float y0, float x1, float y1) {
+  UpdateUvsIfNeeded(session, frame, &uvs_initialized_, transformed_uvs_);
+  DrawDepthPanelWithTexture(depth_texture_id_, transformed_uvs_, x0, y0, x1, y1);
+}
+
+void BackgroundRenderer::DrawDepthPanelWithTexture(GLuint depth_texture_id,
+                                                   const float* tex_uvs,
+                                                   float x0, float y0,
+                                                   float x1, float y1) {
+  if (depth_texture_id == 0 || depth_color_palette_id_ == -1 || tex_uvs == nullptr) {
+    return;
+  }
+
+  const GLfloat panel_vertices[] = {
+      x0, y0, x1, y0, x0, y1, x1, y1,
+  };
+
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+  glDepthMask(GL_FALSE);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, depth_texture_id);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, depth_color_palette_id_);
+  glUseProgram(depth_program_);
+  glUniform1i(depth_texture_uniform_, 0);
+  glUniform1i(depth_color_palette_uniform_, 1);
+
+  glVertexAttribPointer(depth_position_attrib_, 2, GL_FLOAT, false, 0,
+                        panel_vertices);
+  glVertexAttribPointer(depth_tex_coord_attrib_, 2, GL_FLOAT, false, 0,
+                        tex_uvs);
+  glEnableVertexAttribArray(depth_position_attrib_);
+  glEnableVertexAttribArray(depth_tex_coord_attrib_);
+  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+  glDisableVertexAttribArray(depth_position_attrib_);
+  glDisableVertexAttribArray(depth_tex_coord_attrib_);
+
+  glUseProgram(0);
+  glDepthMask(GL_TRUE);
+  glEnable(GL_DEPTH_TEST);
+  glEnable(GL_CULL_FACE);
+}
 
 }  // namespace hello_ar

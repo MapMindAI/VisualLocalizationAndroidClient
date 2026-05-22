@@ -20,22 +20,6 @@
 namespace hello_ar {
 namespace {
 
-inline uint8_t ClampU8(float v) {
-  if (v <= 0.0f) return 0;
-  if (v >= 255.0f) return 255;
-  return static_cast<uint8_t>(v);
-}
-
-inline void MakeJetColorRgb(float t, uint8_t* r, uint8_t* g, uint8_t* b) {
-  const float x = std::min(1.0f, std::max(0.0f, t));
-  const float fr = std::min(1.0f, std::max(0.0f, 1.5f - std::abs(4.0f * x - 3.0f)));
-  const float fg = std::min(1.0f, std::max(0.0f, 1.5f - std::abs(4.0f * x - 2.0f)));
-  const float fb = std::min(1.0f, std::max(0.0f, 1.5f - std::abs(4.0f * x - 1.0f)));
-  *r = ClampU8(fr * 255.0f);
-  *g = ClampU8(fg * 255.0f);
-  *b = ClampU8(fb * 255.0f);
-}
-
 }  // namespace
 
 struct Da2Pipeline::Impl {
@@ -271,21 +255,23 @@ struct Da2Pipeline::Impl {
             vmax = 1.0f;
           }
           const float inv_span = 1.0f / std::max(1e-6f, vmax - vmin);
+          constexpr float kVizMaxDepthMeters = 30.0f;
 
-          std::vector<uint8_t> preview_rgb(static_cast<size_t>(out_count) * 3U);
+          std::vector<uint8_t> preview_depth_rg(static_cast<size_t>(out_count) * 2U);
           for (int i = 0; i < out_count; ++i) {
             const float d = depth_ptr[i];
             const float t = std::isfinite(d) ? (d - vmin) * inv_span : 0.0f;
-            uint8_t r = 0, g = 0, b = 0;
-            MakeJetColorRgb(t, &r, &g, &b);
-            preview_rgb[3 * i + 0] = r;
-            preview_rgb[3 * i + 1] = g;
-            preview_rgb[3 * i + 2] = b;
+            const float depth_m = std::min(
+                kVizMaxDepthMeters, std::max(0.0f, t * kVizMaxDepthMeters));
+            const uint32_t depth_mm =
+                static_cast<uint32_t>(depth_m * 1000.0f);
+            preview_depth_rg[2 * i + 0] = static_cast<uint8_t>(depth_mm & 0xFFu);
+            preview_depth_rg[2 * i + 1] = static_cast<uint8_t>((depth_mm >> 8) & 0xFFu);
           }
 
           {
             std::lock_guard<std::mutex> lock(preview_mutex);
-            latest_depth_preview.rgb = std::move(preview_rgb);
+            latest_depth_preview.depth_rg = std::move(preview_depth_rg);
             latest_depth_preview.width = out_w;
             latest_depth_preview.height = out_h;
             latest_depth_preview.timestamp_ns = task.timestamp_ns;
@@ -350,7 +336,7 @@ bool Da2Pipeline::GetLatestDepthPreview(DepthPreview* out) const {
     return false;
   }
   std::lock_guard<std::mutex> lock(impl_->preview_mutex);
-  if (impl_->latest_depth_preview.rgb.empty() ||
+  if (impl_->latest_depth_preview.depth_rg.empty() ||
       impl_->latest_depth_preview.width <= 0 ||
       impl_->latest_depth_preview.height <= 0 ||
       impl_->latest_depth_preview.timestamp_ns <= 0) {

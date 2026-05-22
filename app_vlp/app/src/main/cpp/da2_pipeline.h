@@ -16,7 +16,7 @@ namespace hello_ar {
 class Da2Pipeline {
  public:
   struct DepthPreview {
-    std::vector<uint8_t> rgb;
+    std::vector<uint8_t> depth_rg;
     int width = 0;
     int height = 0;
     int64_t timestamp_ns = 0;

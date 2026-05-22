@@ -83,6 +83,11 @@ JNI_METHOD(void, setStreamConsumerActive)
   native(native_application)->setStreamConsumerActive(active == JNI_TRUE);
 }
 
+JNI_METHOD(void, setDepthSource)
+(JNIEnv *, jclass, jlong native_application, jint depth_source) {
+  native(native_application)->setDepthSource(static_cast<int>(depth_source));
+}
+
 JNI_METHOD(void, destroyNativeApplication)
 (JNIEnv *, jclass, jlong native_application) {
   delete native(native_application);
