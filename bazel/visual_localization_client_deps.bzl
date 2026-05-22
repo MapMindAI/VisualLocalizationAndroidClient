@@ -28,6 +28,21 @@ def visual_localization_client_deps():
 
     maybe(
         http_archive,
+        name = "rules_android_ndk",
+        patch_args = [
+            "-p1",
+        ],
+        # https://github.com/bazelbuild/rules_android_ndk/issues/36
+        patches = [
+            "@mm_visual_localization_client//third_party:rules_android_ndk_crosstool_hack.diff",
+        ],
+        sha256 = "79b1857e8e05e3007ad090a3269d2932e988b3ed176d7abd042719d45eb51500",
+        strip_prefix = "rules_android_ndk-44dcd014f4b126f8941c29ff1b25e1584bd3eb26",
+        url = "https://github.com/bazelbuild/rules_android_ndk/archive/44dcd014f4b126f8941c29ff1b25e1584bd3eb26.zip",
+    )
+
+    maybe(
+        http_archive,
         name = "fmt",
         build_file = "@mm_visual_localization_client//third_party:fmt.BUILD",
         strip_prefix = "fmt-10.2.1",

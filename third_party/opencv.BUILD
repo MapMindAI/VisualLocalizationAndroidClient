@@ -1,14 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_pkg//:mappings.bzl", "pkg_files")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "opencv",
     srcs = select({
-        "@bazel_platforms//:android_arm64": ["lib/opencv_android/arm64-v8a/libopencv_java4.so"],
-        "@bazel_platforms//:android_armv7a": ["lib/opencv_android/armeabi-v7a/libopencv_java4.so"],
-        "//conditions:default": glob(["lib/libopencv_*.so*"]),
+        "@bazel_platforms//:linux_arm64": glob(["lib/aarch64-linux-gnu/libopencv_*.so"]),
+        "@bazel_platforms//:android_arm64": glob(["lib/android/arm64-v8a/libopencv_*.so"]),
+        "//conditions:default": glob(["lib/libopencv_*.so"]),
     }),
     hdrs = glob(["include/opencv4/opencv2/**/*"]),
-    includes = ["include/opencv4"],
+    strip_include_prefix = "include/opencv4",
+)
+
+pkg_files(
+    name = "opencv_lib",
+    prefix = "lib/" + select({
+        "@bazel_platforms//:android_arm64": "arm64-v8a",
+        "//conditions:default": "x86_64",
+    }),
+    srcs = select({
+        "@bazel_platforms//:android_arm64": glob(["lib/android/arm64-v8a/libopencv_*.so"]),
+        "//conditions:default": glob(["lib/libopencv_*.so"]),
+    }),
 )
 
 cc_library(

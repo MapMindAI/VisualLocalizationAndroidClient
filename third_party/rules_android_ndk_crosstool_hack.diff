@@ -1,0 +1,16 @@
+diff --git a/BUILD.ndk_root.tpl b/BUILD.ndk_root.tpl
+index 2ed0917..6d58834 100644
+--- a/BUILD.ndk_root.tpl
++++ b/BUILD.ndk_root.tpl
+@@ -6,6 +6,11 @@ load("//:target_systems.bzl", "CPU_CONSTRAINT", "TARGET_SYSTEM_NAMES")
+
+ exports_files(["target_systems.bzl"])
+
++alias(
++    name = "default_crosstool",
++    actual = "//{clang_directory}:cc_toolchain_suite",
++)
++
+ alias(
+     name = "toolchain",
+     actual = "//{clang_directory}:cc_toolchain_suite",
