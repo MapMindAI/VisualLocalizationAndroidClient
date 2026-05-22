@@ -31,10 +31,7 @@ import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
@@ -44,9 +41,7 @@ import androidx.core.content.ContextCompat;
 import com.google.android.material.snackbar.Snackbar;
 import java.io.File;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -67,11 +62,8 @@ public class HelloArActivity extends AppCompatActivity
   private GLSurfaceView surfaceView;
   private TextView msgView;
   private TextView robotStatusView;
-  private Spinner robotDeviceSpinner;
   private View robotPanelView;
   private Button robotPanelToggleButton;
-  private ArrayAdapter<String> robotSpinnerAdapter;
-  private final List<BluetoothDevice> robotDeviceList = new ArrayList<>();
   private BleServerManager bleServerManager;
   private boolean robotPanelVisible = true;
 
@@ -126,7 +118,6 @@ public class HelloArActivity extends AppCompatActivity
     robotPanelView = findViewById(R.id.robot_panel);
     robotPanelToggleButton = findViewById(R.id.robot_panel_toggle_button);
     robotStatusView = findViewById(R.id.robot_status);
-    robotDeviceSpinner = findViewById(R.id.robot_device_spinner);
 
     // Set up touch listener.
     gestureDetector =
@@ -268,31 +259,12 @@ public class HelloArActivity extends AppCompatActivity
           robotPanelToggleButton.setText(robotPanelVisible ? "Hide BLE" : "Show BLE");
         });
 
-    robotSpinnerAdapter =
-        new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, new ArrayList<>());
-    robotSpinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-    robotDeviceSpinner.setAdapter(robotSpinnerAdapter);
-    robotDeviceSpinner.setOnItemSelectedListener(
-        new AdapterView.OnItemSelectedListener() {
-          @Override
-          public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-            if (position >= 0 && position < robotDeviceList.size() && bleServerManager != null) {
-              bleServerManager.setTargetDevice(robotDeviceList.get(position));
-            }
-          }
-
-          @Override
-          public void onNothingSelected(AdapterView<?> parent) {}
-        });
-
     findViewById(R.id.robot_scan_button)
         .setOnClickListener(
             v -> {
               if (!ensureBlePermissions()) return;
               if (bleServerManager == null) return;
-              robotDeviceList.clear();
-              robotSpinnerAdapter.clear();
-              robotSpinnerAdapter.notifyDataSetChanged();
+              robotStatusView.setText("BLE scanning...");
               bleServerManager.scanMokukuDevices(this);
             });
 
@@ -496,19 +468,26 @@ public class HelloArActivity extends AppCompatActivity
 
   @Override
   public void onDeviceFound(BluetoothDevice device, String displayName) {
-    runOnUiThread(
-        () -> {
-          if (!robotDeviceList.contains(device)) {
-            robotDeviceList.add(device);
-            robotSpinnerAdapter.add(displayName);
-            robotSpinnerAdapter.notifyDataSetChanged();
-          }
-        });
+    runOnUiThread(() -> {
+      if (bleServerManager != null) {
+        bleServerManager.setTargetDevice(device);
+      }
+      Log.i(TAG, "BLE device found, connecting: " + displayName);
+      robotStatusView.setText("Found " + displayName + ", connecting...");
+    });
+  }
+
+  @Override
+  public void onDeviceConnect(BluetoothDevice device, String displayName) {
+    runOnUiThread(() -> {
+      Log.i(TAG, "BLE connected: " + displayName);
+      robotStatusView.setText("Connected: " + displayName);
+    });
   }
 
   @Override
   public void onScanFinished() {
-    runOnUiThread(() -> robotStatusView.setText("BLE scan done"));
+    // runOnUiThread(() -> robotStatusView.setText("BLE scan done"));
   }
 
   /**

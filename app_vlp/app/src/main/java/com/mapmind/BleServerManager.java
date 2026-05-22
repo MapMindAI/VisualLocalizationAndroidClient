@@ -59,6 +59,7 @@ public class BleServerManager {
   private BluetoothGatt gatt;
   private BluetoothGattCharacteristic characteristic;
   private BluetoothDevice targetDevice;
+  private DeviceScanListener deviceListener;
 
   private boolean isReconnecting = false;
   private int reconnectAttempts = 0;
@@ -80,6 +81,7 @@ public class BleServerManager {
   }
 
   public void scanMokukuDevices(DeviceScanListener listener) {
+    deviceListener = listener;
     if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
       debugMsg = "Bluetooth disabled";
       Log.e(TAG, debugMsg);
@@ -99,6 +101,7 @@ public class BleServerManager {
       return;
     }
 
+    final boolean[] foundAny = {false};
     scanCallback =
         new ScanCallback() {
           @Override
@@ -110,7 +113,10 @@ public class BleServerManager {
                     ? result.getScanRecord().getDeviceName()
                     : device.getName();
             if (name != null && name.startsWith(bleDeviceHeader)) {
+              if (foundAny[0]) return;
+              foundAny[0] = true;
               listener.onDeviceFound(device, name + " [" + rssi + "]");
+              stopScan(listener);
             }
           }
 
@@ -227,6 +233,10 @@ public class BleServerManager {
           if (newState == BluetoothProfile.STATE_CONNECTED) {
             isReconnecting = false;
             debugMsg = "Connected " + safeName(gatt.getDevice());
+            Log.i(TAG, "Connected to " + safeName(gatt.getDevice()));
+            if (deviceListener != null) {
+              deviceListener.onDeviceConnect(gatt.getDevice(), safeName(gatt.getDevice()));
+            }
             try {
               gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH);
               gatt.requestMtu(128);
@@ -235,6 +245,7 @@ public class BleServerManager {
             }
           } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
             debugMsg = "Disconnected";
+            Log.w(TAG, "Disconnected from " + safeName(gatt.getDevice()) + ", status=" + status);
             gatt.close();
             characteristic = null;
             scheduleReconnect();
@@ -282,6 +293,7 @@ public class BleServerManager {
             gatt.writeDescriptor(descriptor);
           }
           debugMsg = "Ready: " + safeName(gatt.getDevice());
+          Log.i(TAG, "BLE ready: " + safeName(gatt.getDevice()));
         }
       };
 
