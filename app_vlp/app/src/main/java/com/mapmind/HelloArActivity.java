@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.google.ar.core.examples.c.helloar;
+package com.mapmind;
 
 import android.content.DialogInterface;
 import android.content.res.Resources;

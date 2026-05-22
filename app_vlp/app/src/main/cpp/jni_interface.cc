@@ -30,7 +30,7 @@
 
 #define JNI_METHOD(return_type, method_name) \
   JNIEXPORT return_type JNICALL              \
-      Java_com_google_ar_core_examples_c_helloar_JniInterface_##method_name
+      Java_com_mapmind_JniInterface_##method_name
 
 extern "C" {
 

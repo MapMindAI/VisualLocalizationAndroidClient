@@ -190,7 +190,7 @@ bool LoadPngFromAssetManager(int target, const char* path) {
     jmethodID load_texture_method;
   } jniIds = [env]() -> JNIData {
     constexpr char kHelperClassName[] =
-        "com/google/ar/core/examples/c/helloar/JniInterface";
+        "com/mapmind/JniInterface";
     constexpr char kLoadImageMethodName[] = "loadImage";
     constexpr char kLoadImageMethodSignature[] =
         "(Ljava/lang/String;)Landroid/graphics/Bitmap;";
