@@ -26,7 +26,6 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -74,7 +73,6 @@ public class HelloArActivity extends AppCompatActivity
   private ArrayAdapter<String> robotSpinnerAdapter;
   private final List<BluetoothDevice> robotDeviceList = new ArrayList<>();
   private BleServerManager bleServerManager;
-  private int currentRobotCmd = -1;
   private boolean robotPanelVisible = true;
 
   private boolean viewportChanged = false;
@@ -118,7 +116,6 @@ public class HelloArActivity extends AppCompatActivity
   //         }
   //       }
   //     };
-  private Handler robotHandler;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -170,7 +167,6 @@ public class HelloArActivity extends AppCompatActivity
     JniInterface.assetManager = getAssets();
     nativeApplication = JniInterface.createNativeApplication(getAssets());
     // planeStatusCheckingHandler = new Handler();
-    robotHandler = new Handler();
 
     depthSettings.onCreate(this);
     instantPlacementSettings.onCreate(this);
@@ -310,10 +306,14 @@ public class HelloArActivity extends AppCompatActivity
           else if (id == R.id.robot_right_button) dir = 6;
 
           if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            currentRobotCmd = dir;
+            if (bleServerManager != null) {
+              bleServerManager.sendStringMessage(dir, "MOVE");
+            }
           } else if (event.getAction() == MotionEvent.ACTION_UP
               || event.getAction() == MotionEvent.ACTION_CANCEL) {
-            currentRobotCmd = 0;
+            if (bleServerManager != null) {
+              bleServerManager.sendStringMessage(5, "STOP");
+            }
           }
           return true;
         };
@@ -331,24 +331,6 @@ public class HelloArActivity extends AppCompatActivity
     bleServerManager.isRobot = true;
     bleServerManager.startClient();
     bleServerManager.scanMokukuDevices(this);
-
-    robotHandler.postDelayed(
-        new Runnable() {
-          @Override
-          public void run() {
-            if (bleServerManager != null) {
-              if (currentRobotCmd > 0) {
-                bleServerManager.sendStringMessage(currentRobotCmd, "MOVE");
-              } else if (currentRobotCmd == 0) {
-                bleServerManager.sendStringMessage(5, "STOP");
-                currentRobotCmd = -1;
-              }
-              robotStatusView.setText(bleServerManager.debugMsg == null ? "" : bleServerManager.debugMsg);
-            }
-            robotHandler.postDelayed(this, 50);
-          }
-        },
-        50);
   }
 
   private boolean ensureBlePermissions() {
@@ -425,9 +407,6 @@ public class HelloArActivity extends AppCompatActivity
   @Override
   public void onDestroy() {
     super.onDestroy();
-    if (robotHandler != null) {
-      robotHandler.removeCallbacksAndMessages(null);
-    }
     if (bleServerManager != null) {
       bleServerManager.shutdown();
     }

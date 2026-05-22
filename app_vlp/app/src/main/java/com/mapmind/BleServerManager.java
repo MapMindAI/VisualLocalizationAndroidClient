@@ -44,6 +44,8 @@ public class BleServerManager {
   private static final int MAX_RECONNECT_ATTEMPTS = 100;
   private static final int RECONNECT_DELAY_MS = 2000;
   private static final long SCAN_PERIOD_MS = 20000;
+  private static final int WRITE_MAX_RETRIES = 5;
+  private static final int WRITE_RETRY_DELAY_MS = 50;
 
   public boolean isRobot = false;
   public String bleDeviceHeader = "mokuku";
@@ -226,6 +228,7 @@ public class BleServerManager {
             isReconnecting = false;
             debugMsg = "Connected " + safeName(gatt.getDevice());
             try {
+              gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH);
               gatt.requestMtu(128);
             } catch (SecurityException e) {
               debugMsg = "Connected; no MTU permission";
@@ -264,6 +267,12 @@ public class BleServerManager {
           if (characteristic == null) {
             debugMsg = "Characteristic missing";
             return;
+          }
+          final int props = characteristic.getProperties();
+          if ((props & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
+            characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+          } else {
+            characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
           }
 
           gatt.setCharacteristicNotification(characteristic, true);
@@ -307,11 +316,31 @@ public class BleServerManager {
   }
 
   private void write(byte[] payload) {
-    characteristic.setValue(payload);
-    boolean ok = gatt.writeCharacteristic(characteristic);
-    if (!ok) {
-      Log.d(TAG, "BLE write failed");
+    writeInternal(payload, 0);
+  }
+
+  private void writeInternal(byte[] payload, int attempt) {
+    if (characteristic == null || gatt == null) {
+      return;
     }
+    characteristic.setValue(payload);
+    boolean ok;
+    try {
+      ok = gatt.writeCharacteristic(characteristic);
+    } catch (SecurityException e) {
+      Log.d(TAG, "BLE write security exception", e);
+      return;
+    }
+    if (ok) {
+      return;
+    }
+    if (attempt >= WRITE_MAX_RETRIES) {
+      Log.d(TAG, "BLE write failed after retries");
+      return;
+    }
+    final byte[] retryPayload = payload.clone();
+    reconnectHandler.postDelayed(
+        () -> writeInternal(retryPayload, attempt + 1), WRITE_RETRY_DELAY_MS);
   }
 
   public void shutdown() {
