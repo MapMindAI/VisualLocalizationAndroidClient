@@ -356,6 +356,10 @@ std::vector<uint8_t> HelloArApplication::getLatestYuvNv21Image() const {
   return latest_yuv_nv21_image_;
 }
 
+bool HelloArApplication::isDa2Ready() const {
+  return da2_pipeline_ != nullptr && da2_pipeline_->IsReady();
+}
+
 void HelloArApplication::getLatestStreamMetadata(
     int64_t* timestamp_ns, int* width, int* height, float* fx, float* fy,
     float* cx, float* cy, float* qx, float* qy, float* qz, float* qw,

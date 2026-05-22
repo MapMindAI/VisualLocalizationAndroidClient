@@ -49,7 +49,7 @@ public class HelloArActivity extends AppCompatActivity
   private static final String TAG = HelloArActivity.class.getSimpleName();
   private static final int SNACKBAR_UPDATE_INTERVAL_MILLIS = 1000; // In milliseconds.
   private static final int DEBUGMSG_UPDATE_INTERVAL_MILLIS = 200; // In milliseconds.
-  private static final int STREAM_UPDATE_INTERVAL_MILLIS = 33; // ~30 FPS target.
+  private static final int STREAM_UPDATE_INTERVAL_MILLIS = 100; // ~10 FPS target.
   private static final int STREAM_SERVER_PORT = 50051;
   private static final int DEPTH_SOURCE_NONE = 0;
   private static final int DEPTH_SOURCE_ARCORE = 1;
@@ -77,6 +77,8 @@ public class HelloArActivity extends AppCompatActivity
   private boolean sceneContentEnabled = true;
 
   private Snackbar snackbar;
+  private Snackbar da2LoadingSnackbar;
+  private boolean wasDa2Loading = false;
   private GrpcFrameStreamServer grpcFrameStreamServer;
   // private Handler planeStatusCheckingHandler;
   // private final Runnable planeStatusCheckingRunnable =
@@ -141,6 +143,7 @@ public class HelloArActivity extends AppCompatActivity
             if (grpcFrameStreamServer != null) {
               grpcFrameStreamServer.publishLatestFrame(nativeApplication);
             }
+            updateDa2LoadingUi();
             if (!renderEnabled && JniInterface.hasLatestStreamFrame(nativeApplication)) {
               float[] pose = JniInterface.getLatestStreamPose(nativeApplication);
               long[] tsData =
@@ -313,6 +316,7 @@ public class HelloArActivity extends AppCompatActivity
           public void onClick(View v) {
             selectedDepthSource = (selectedDepthSource + 1) % 3;
             JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
+            updateDa2LoadingUi();
             updateTopControlLabels(depthSourceButton, instantPlacementButton);
           }
         });
@@ -485,6 +489,31 @@ public class HelloArActivity extends AppCompatActivity
     // Set the snackbar background to light transparent black color.
     snackbar.getView().setBackgroundColor(0xbf323232);
     snackbar.show();
+  }
+
+  private void updateDa2LoadingUi() {
+    boolean showLoading = !JniInterface.isDa2Ready(nativeApplication);
+    if (showLoading) {
+      wasDa2Loading = true;
+      if (da2LoadingSnackbar == null || !da2LoadingSnackbar.isShown()) {
+        da2LoadingSnackbar =
+            Snackbar.make(
+                HelloArActivity.this.findViewById(android.R.id.content),
+                "Loading DA2 model...",
+                Snackbar.LENGTH_INDEFINITE);
+        da2LoadingSnackbar.getView().setBackgroundColor(0xbf323232);
+        da2LoadingSnackbar.show();
+      }
+    } else {
+      if (da2LoadingSnackbar != null) {
+        da2LoadingSnackbar.dismiss();
+        da2LoadingSnackbar = null;
+      }
+      if (wasDa2Loading) {
+        displayInSnackbar("DA2 model loaded");
+      }
+      wasDa2Loading = false;
+    }
   }
 
   /**

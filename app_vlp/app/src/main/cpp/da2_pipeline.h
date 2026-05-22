@@ -25,6 +25,7 @@ class Da2Pipeline {
   explicit Da2Pipeline(AAssetManager* asset_manager);
   ~Da2Pipeline();
 
+  bool IsReady() const;
   void EnqueueFrame(const std::vector<uint8_t>& gray, int width, int height,
                     int64_t timestamp_ns);
   bool GetLatestDepthPreview(DepthPreview* out) const;

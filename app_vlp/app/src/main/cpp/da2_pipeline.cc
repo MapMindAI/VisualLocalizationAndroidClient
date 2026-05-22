@@ -7,6 +7,7 @@
 #include <android/asset_manager.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cmath>
@@ -24,13 +25,7 @@ namespace {
 
 struct Da2Pipeline::Impl {
   explicit Impl(AAssetManager* asset_manager) : asset_manager(asset_manager) {
-    ready = Initialize();
-    if (ready) {
-      worker = std::thread(&Impl::WorkerLoop, this);
-      LOGI("DA2 pipeline initialized.");
-    } else {
-      LOGE("DA2 pipeline initialization failed.");
-    }
+    init_thread = std::thread(&Impl::InitializeLoop, this);
   }
 
   ~Impl() {
@@ -40,6 +35,9 @@ struct Da2Pipeline::Impl {
       has_pending = false;
     }
     cv.notify_all();
+    if (init_thread.joinable()) {
+      init_thread.join();
+    }
     if (worker.joinable()) {
       worker.join();
     }
@@ -51,6 +49,17 @@ struct Da2Pipeline::Impl {
     int height = 0;
     int64_t timestamp_ns = 0;
   };
+
+  void InitializeLoop() {
+    const bool ok = Initialize();
+    if (!ok) {
+      LOGE("DA2 pipeline initialization failed.");
+      return;
+    }
+    ready.store(true);
+    worker = std::thread(&Impl::WorkerLoop, this);
+    LOGI("DA2 pipeline initialized.");
+  }
 
   bool Initialize() {
     std::vector<uint8_t> model_data;
@@ -266,7 +275,7 @@ struct Da2Pipeline::Impl {
   }
 
   AAssetManager* asset_manager = nullptr;
-  bool ready = false;
+  std::atomic<bool> ready{false};
   std::shared_ptr<MNN::Interpreter> interpreter;
   MNN::Session* session = nullptr;
   MNN::Tensor* input_tensor = nullptr;
@@ -274,6 +283,7 @@ struct Da2Pipeline::Impl {
   int input_width = 0;
   int input_height = 0;
 
+  std::thread init_thread;
   std::thread worker;
   std::mutex mutex;
   std::condition_variable cv;
@@ -293,7 +303,8 @@ Da2Pipeline::~Da2Pipeline() = default;
 
 void Da2Pipeline::EnqueueFrame(const std::vector<uint8_t>& gray, int width,
                                int height, int64_t timestamp_ns) {
-  if (!impl_ || !impl_->ready || gray.empty() || width <= 0 || height <= 0) {
+  if (!impl_ || !impl_->ready.load() || gray.empty() || width <= 0 ||
+      height <= 0) {
     return;
   }
   Impl::Frame task;
@@ -310,7 +321,7 @@ void Da2Pipeline::EnqueueFrame(const std::vector<uint8_t>& gray, int width,
 }
 
 bool Da2Pipeline::GetLatestDepthPreview(DepthPreview* out) const {
-  if (!impl_ || !impl_->ready || out == nullptr) {
+  if (!impl_ || !impl_->ready.load() || out == nullptr) {
     return false;
   }
   std::lock_guard<std::mutex> lock(impl_->preview_mutex);
@@ -322,6 +333,10 @@ bool Da2Pipeline::GetLatestDepthPreview(DepthPreview* out) const {
   }
   *out = impl_->latest_depth_preview;
   return true;
+}
+
+bool Da2Pipeline::IsReady() const {
+  return impl_ != nullptr && impl_->ready.load();
 }
 
 }  // namespace hello_ar

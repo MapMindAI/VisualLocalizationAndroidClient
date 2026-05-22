@@ -94,6 +94,7 @@ class HelloArApplication {
   void setSceneContentEnabled(bool enabled) { scene_content_enabled_ = enabled; }
   void setStreamConsumerActive(bool active) { stream_consumer_active_ = active; }
   void setDepthSource(int source) { depth_source_.store(source); }
+  bool isDa2Ready() const;
 
   int PublishImage();
   bool popDebugMessage();
