@@ -26,11 +26,11 @@
       android:layout_gravity="top"/>
 
   <LinearLayout
-      android:id="@+id/top_controls"
+      android:id="@+id/top_bar"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:layout_alignParentTop="true"
-      android:layout_margin="12dp"
+      android:layout_margin="8dp"
       android:orientation="horizontal">
       <Button
           android:id="@+id/depth_source_button"
@@ -43,19 +43,81 @@
           android:layout_width="8dp"
           android:layout_height="0dp" />
       <Button
-          android:id="@+id/instant_placement_button"
-          android:layout_width="0dp"
+          android:id="@+id/robot_panel_toggle_button"
+          android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:layout_weight="1"
-          android:text="Instant: OFF"
+          android:text="Hide BLE"
           android:textAllCaps="false" />
+  </LinearLayout>
+
+  <LinearLayout
+      android:id="@+id/robot_panel"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_below="@id/top_bar"
+      android:layout_margin="8dp"
+      android:background="#66000000"
+      android:orientation="vertical"
+      android:padding="8dp">
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:orientation="horizontal">
+          <Button
+              android:id="@+id/robot_scan_button"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:text="Scan BLE"
+              android:textAllCaps="false" />
+          <Spinner
+              android:id="@+id/robot_device_spinner"
+              android:layout_width="0dp"
+              android:layout_height="wrap_content"
+              android:layout_weight="1" />
+      </LinearLayout>
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:orientation="horizontal">
+          <Button
+              android:id="@+id/robot_left_button"
+              android:layout_width="0dp"
+              android:layout_height="wrap_content"
+              android:layout_weight="1"
+              android:text="Left" />
+          <Button
+              android:id="@+id/robot_up_button"
+              android:layout_width="0dp"
+              android:layout_height="wrap_content"
+              android:layout_weight="1"
+              android:text="Up" />
+          <Button
+              android:id="@+id/robot_down_button"
+              android:layout_width="0dp"
+              android:layout_height="wrap_content"
+              android:layout_weight="1"
+              android:text="Down" />
+          <Button
+              android:id="@+id/robot_right_button"
+              android:layout_width="0dp"
+              android:layout_height="wrap_content"
+              android:layout_weight="1"
+              android:text="Right" />
+      </LinearLayout>
+      <TextView
+          android:id="@+id/robot_status"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:textColor="#FFFFFF"
+          android:textSize="12sp" />
   </LinearLayout>
 
   <TextView
       android:id="@+id/msg"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
-      android:layout_below="@id/top_controls"
+      android:layout_below="@id/robot_panel"
       android:textSize="12sp" />
 
   <LinearLayout
@@ -66,16 +128,6 @@
       android:layout_margin="12dp"
       android:padding="8dp"
       android:orientation="horizontal">
-      <Button
-          android:id="@+id/send_button"
-          android:layout_width="0dp"
-          android:layout_height="wrap_content"
-          android:layout_weight="1"
-          android:text="Send Image"
-          android:textAllCaps="false" />
-      <View
-          android:layout_width="5dp"
-          android:layout_height="0dp" />
       <Button
           android:id="@+id/startrec"
           android:layout_width="0dp"

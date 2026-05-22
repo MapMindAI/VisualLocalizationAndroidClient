@@ -16,11 +16,15 @@
 
 package com.mapmind;
 
+import android.Manifest;
+import android.bluetooth.BluetoothDevice;
 import android.content.DialogInterface;
+import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.hardware.display.DisplayManager;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
@@ -28,15 +32,22 @@ import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import com.google.android.material.snackbar.Snackbar;
 import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -45,18 +56,26 @@ import javax.microedition.khronos.opengles.GL10;
  * ARCore C API.
  */
 public class HelloArActivity extends AppCompatActivity
-    implements GLSurfaceView.Renderer, DisplayManager.DisplayListener {
+    implements GLSurfaceView.Renderer, DisplayManager.DisplayListener, DeviceScanListener {
   private static final String TAG = HelloArActivity.class.getSimpleName();
   private static final int SNACKBAR_UPDATE_INTERVAL_MILLIS = 1000; // In milliseconds.
-  private static final int DEBUGMSG_UPDATE_INTERVAL_MILLIS = 200; // In milliseconds.
-  private static final int STREAM_UPDATE_INTERVAL_MILLIS = 100; // ~10 FPS target.
   private static final int DEPTH_SOURCE_NONE = 0;
   private static final int DEPTH_SOURCE_ARCORE = 1;
   private static final int DEPTH_SOURCE_DA2 = 2;
   private static final int NUM_INSTANT_PLACEMENT_SETTINGS_CHECKBOXES = 1;
+  private static final int BLE_PERMISSION_REQUEST_CODE = 1002;
 
   private GLSurfaceView surfaceView;
   private TextView msgView;
+  private TextView robotStatusView;
+  private Spinner robotDeviceSpinner;
+  private View robotPanelView;
+  private Button robotPanelToggleButton;
+  private ArrayAdapter<String> robotSpinnerAdapter;
+  private final List<BluetoothDevice> robotDeviceList = new ArrayList<>();
+  private BleServerManager bleServerManager;
+  private int currentRobotCmd = -1;
+  private boolean robotPanelVisible = true;
 
   private boolean viewportChanged = false;
   private int viewportWidth;
@@ -73,7 +92,7 @@ public class HelloArActivity extends AppCompatActivity
   private long nativeApplication;
   private GestureDetector gestureDetector;
   private boolean renderEnabled = true;
-  private boolean sceneContentEnabled = true;
+  private boolean sceneContentEnabled = false;
 
   private Snackbar snackbar;
   private Snackbar da2LoadingSnackbar;
@@ -99,61 +118,7 @@ public class HelloArActivity extends AppCompatActivity
   //         }
   //       }
   //     };
-  private Handler debugStatusCheckingHandler;
-  private Handler streamStatusCheckingHandler;
-  private final Runnable debugStatusCheckingRunnable =
-      new Runnable() {
-        @Override
-        public void run() {
-          // The runnable is executed on main UI thread.
-          try {
-            if (renderEnabled && JniInterface.popDebugMessage(nativeApplication)) {
-              if (snackbar != null) {
-                snackbar.dismiss();
-              }
-              snackbar = null;
-              msgView.setText(
-                  JniInterface.getDebugMessage(nativeApplication)
-                      + "\nDepth Source: "
-                      + depthSourceLabel());
-            }
-            debugStatusCheckingHandler.postDelayed(
-                debugStatusCheckingRunnable, DEBUGMSG_UPDATE_INTERVAL_MILLIS);
-          } catch (Exception e) {
-            Log.e(TAG, e.getMessage());
-          }
-        }
-      };
-  private final Runnable streamStatusCheckingRunnable =
-      new Runnable() {
-        @Override
-        public void run() {
-          try {
-            if (!renderEnabled) {
-              surfaceView.requestRender();
-            }
-            updateDa2LoadingUi();
-            if (!renderEnabled && JniInterface.hasLatestStreamFrame(nativeApplication)) {
-              float[] pose = JniInterface.getLatestStreamPose(nativeApplication);
-              long[] tsData =
-                  JniInterface.getLatestStreamDimensionsAndTimestamp(nativeApplication);
-              if (pose != null && pose.length >= 7 && tsData != null && tsData.length >= 1) {
-                msgView.setText(
-                    String.format(
-                        Locale.US,
-                        "Render OFF\nDepth Source: %s\nq=(%.4f, %.4f, %.4f, %.4f)\nt=(%.4f, %.4f, %.4f)\nts=%d",
-                        depthSourceLabel(),
-                        pose[0], pose[1], pose[2], pose[3], pose[4], pose[5], pose[6], tsData[0]));
-              }
-            }
-          } catch (Exception e) {
-            Log.e(TAG, "streamStatusCheckingRunnable failed", e);
-          } finally {
-            streamStatusCheckingHandler.postDelayed(
-                streamStatusCheckingRunnable, STREAM_UPDATE_INTERVAL_MILLIS);
-          }
-        }
-      };
+  private Handler robotHandler;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -161,6 +126,10 @@ public class HelloArActivity extends AppCompatActivity
     setContentView(R.layout.activity_main);
     surfaceView = (GLSurfaceView) findViewById(R.id.surfaceview);
     msgView = findViewById(R.id.msg);
+    robotPanelView = findViewById(R.id.robot_panel);
+    robotPanelToggleButton = findViewById(R.id.robot_panel_toggle_button);
+    robotStatusView = findViewById(R.id.robot_status);
+    robotDeviceSpinner = findViewById(R.id.robot_device_spinner);
 
     // Set up touch listener.
     gestureDetector =
@@ -201,12 +170,12 @@ public class HelloArActivity extends AppCompatActivity
     JniInterface.assetManager = getAssets();
     nativeApplication = JniInterface.createNativeApplication(getAssets());
     // planeStatusCheckingHandler = new Handler();
-    debugStatusCheckingHandler = new Handler();
-    streamStatusCheckingHandler = new Handler();
+    robotHandler = new Handler();
 
     depthSettings.onCreate(this);
     instantPlacementSettings.onCreate(this);
     JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
+    setupRobotPanel();
 
     File externalStorage = new File(getExternalFilesDir(null), "myfile.txt");
     Log.i("Mobili", externalStorage.getAbsolutePath());
@@ -219,16 +188,6 @@ public class HelloArActivity extends AppCompatActivity
       }
     }
 
-    Button sendButton = findViewById(R.id.send_button);
-    sendButton.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        int ret = JniInterface.onSendImage(nativeApplication);
-        displayInSnackbar("Send Image " + ret);
-      }
-    });
-
-    //
     Button startrecButton = findViewById(R.id.startrec);
     startrecButton.setOnClickListener(new View.OnClickListener() {
       @Override
@@ -278,7 +237,7 @@ public class HelloArActivity extends AppCompatActivity
         }
       }
     });
-    sceneToggleButton.setText("Hide Scene");
+    sceneToggleButton.setText("Show Scene");
     sceneToggleButton.setOnClickListener(
         new View.OnClickListener() {
           @Override
@@ -291,8 +250,7 @@ public class HelloArActivity extends AppCompatActivity
         });
 
     final Button depthSourceButton = findViewById(R.id.depth_source_button);
-    final Button instantPlacementButton = findViewById(R.id.instant_placement_button);
-    updateTopControlLabels(depthSourceButton, instantPlacementButton);
+    updateTopControlLabels(depthSourceButton);
     depthSourceButton.setOnClickListener(
         new View.OnClickListener() {
           @Override
@@ -300,20 +258,125 @@ public class HelloArActivity extends AppCompatActivity
             selectedDepthSource = (selectedDepthSource + 1) % 3;
             JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
             updateDa2LoadingUi();
-            updateTopControlLabels(depthSourceButton, instantPlacementButton);
-          }
-        });
-    instantPlacementButton.setOnClickListener(
-        new View.OnClickListener() {
-          @Override
-          public void onClick(View v) {
-            boolean enabled = !instantPlacementSettings.isInstantPlacementEnabled();
-            instantPlacementSettings.setInstantPlacementEnabled(enabled);
-            JniInterface.onSettingsChange(nativeApplication, enabled);
-            updateTopControlLabels(depthSourceButton, instantPlacementButton);
+            updateTopControlLabels(depthSourceButton);
           }
         });
     // TODO(yeliu): download tsdf mesh
+  }
+
+  private void setupRobotPanel() {
+    robotPanelToggleButton.setOnClickListener(
+        v -> {
+          robotPanelVisible = !robotPanelVisible;
+          robotPanelView.setVisibility(robotPanelVisible ? View.VISIBLE : View.GONE);
+          robotPanelToggleButton.setText(robotPanelVisible ? "Hide BLE" : "Show BLE");
+        });
+
+    robotSpinnerAdapter =
+        new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, new ArrayList<>());
+    robotSpinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+    robotDeviceSpinner.setAdapter(robotSpinnerAdapter);
+    robotDeviceSpinner.setOnItemSelectedListener(
+        new AdapterView.OnItemSelectedListener() {
+          @Override
+          public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+            if (position >= 0 && position < robotDeviceList.size() && bleServerManager != null) {
+              bleServerManager.setTargetDevice(robotDeviceList.get(position));
+            }
+          }
+
+          @Override
+          public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+    findViewById(R.id.robot_scan_button)
+        .setOnClickListener(
+            v -> {
+              if (!ensureBlePermissions()) return;
+              if (bleServerManager == null) return;
+              robotDeviceList.clear();
+              robotSpinnerAdapter.clear();
+              robotSpinnerAdapter.notifyDataSetChanged();
+              bleServerManager.scanMokukuDevices(this);
+            });
+
+    View.OnTouchListener robotMoveListener =
+        (v, event) -> {
+          int dir = 0;
+          int id = v.getId();
+          if (id == R.id.robot_up_button) dir = 8;
+          else if (id == R.id.robot_down_button) dir = 2;
+          else if (id == R.id.robot_left_button) dir = 4;
+          else if (id == R.id.robot_right_button) dir = 6;
+
+          if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            currentRobotCmd = dir;
+          } else if (event.getAction() == MotionEvent.ACTION_UP
+              || event.getAction() == MotionEvent.ACTION_CANCEL) {
+            currentRobotCmd = 0;
+          }
+          return true;
+        };
+    findViewById(R.id.robot_up_button).setOnTouchListener(robotMoveListener);
+    findViewById(R.id.robot_down_button).setOnTouchListener(robotMoveListener);
+    findViewById(R.id.robot_left_button).setOnTouchListener(robotMoveListener);
+    findViewById(R.id.robot_right_button).setOnTouchListener(robotMoveListener);
+
+    if (!ensureBlePermissions()) {
+      robotStatusView.setText("BLE permission required");
+      return;
+    }
+    bleServerManager = new BleServerManager(this);
+    bleServerManager.bleDeviceHeader = "BOTMOKUKU";
+    bleServerManager.isRobot = true;
+    bleServerManager.startClient();
+    bleServerManager.scanMokukuDevices(this);
+
+    robotHandler.postDelayed(
+        new Runnable() {
+          @Override
+          public void run() {
+            if (bleServerManager != null) {
+              if (currentRobotCmd > 0) {
+                bleServerManager.sendStringMessage(currentRobotCmd, "MOVE");
+              } else if (currentRobotCmd == 0) {
+                bleServerManager.sendStringMessage(5, "STOP");
+                currentRobotCmd = -1;
+              }
+              robotStatusView.setText(bleServerManager.debugMsg == null ? "" : bleServerManager.debugMsg);
+            }
+            robotHandler.postDelayed(this, 50);
+          }
+        },
+        50);
+  }
+
+  private boolean ensureBlePermissions() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+      boolean fineLocationGranted =
+          ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+              == PackageManager.PERMISSION_GRANTED;
+      if (fineLocationGranted) {
+        return true;
+      }
+      ActivityCompat.requestPermissions(
+          this, new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, BLE_PERMISSION_REQUEST_CODE);
+      return false;
+    }
+    boolean scanGranted =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+            == PackageManager.PERMISSION_GRANTED;
+    boolean connectGranted =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+            == PackageManager.PERMISSION_GRANTED;
+    if (scanGranted && connectGranted) {
+      return true;
+    }
+    ActivityCompat.requestPermissions(
+        this,
+        new String[] {Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT},
+        BLE_PERMISSION_REQUEST_CODE);
+    return false;
   }
 
   @Override
@@ -345,14 +408,6 @@ public class HelloArActivity extends AppCompatActivity
       return;
     }
 
-    // displayInSnackbar("Searching for surfaces...");
-    // planeStatusCheckingHandler.postDelayed(
-    //     planeStatusCheckingRunnable, SNACKBAR_UPDATE_INTERVAL_MILLIS);
-    debugStatusCheckingHandler.postDelayed(
-        debugStatusCheckingRunnable, DEBUGMSG_UPDATE_INTERVAL_MILLIS);
-    streamStatusCheckingHandler.postDelayed(
-        streamStatusCheckingRunnable, STREAM_UPDATE_INTERVAL_MILLIS);
-
     // Listen to display changed events to detect 180° rotation, which does not cause a config
     // change or view resize.
     getSystemService(DisplayManager.class).registerDisplayListener(this, null);
@@ -364,16 +419,18 @@ public class HelloArActivity extends AppCompatActivity
     surfaceView.onPause();
     JniInterface.onPause(nativeApplication);
 
-    // planeStatusCheckingHandler.removeCallbacks(planeStatusCheckingRunnable);
-    debugStatusCheckingHandler.removeCallbacks(debugStatusCheckingRunnable);
-    streamStatusCheckingHandler.removeCallbacks(streamStatusCheckingRunnable);
-
     getSystemService(DisplayManager.class).unregisterDisplayListener(this);
   }
 
   @Override
   public void onDestroy() {
     super.onDestroy();
+    if (robotHandler != null) {
+      robotHandler.removeCallbacksAndMessages(null);
+    }
+    if (bleServerManager != null) {
+      bleServerManager.shutdown();
+    }
 
     // Synchronized to avoid racing onDrawFrame.
     synchronized (this) {
@@ -436,6 +493,12 @@ public class HelloArActivity extends AppCompatActivity
   @Override
   public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
     super.onRequestPermissionsResult(requestCode, permissions, results);
+    if (requestCode == BLE_PERMISSION_REQUEST_CODE) {
+      if (ensureBlePermissions() && bleServerManager == null) {
+        setupRobotPanel();
+      }
+      return;
+    }
     if (!CameraPermissionHelper.hasCameraPermission(this)) {
       Toast.makeText(this, "Camera permission is needed to run this application", Toast.LENGTH_LONG)
           .show();
@@ -445,6 +508,28 @@ public class HelloArActivity extends AppCompatActivity
       }
       finish();
     }
+  }
+
+  @Override
+  public void onScanStart() {
+    runOnUiThread(() -> robotStatusView.setText("BLE scanning..."));
+  }
+
+  @Override
+  public void onDeviceFound(BluetoothDevice device, String displayName) {
+    runOnUiThread(
+        () -> {
+          if (!robotDeviceList.contains(device)) {
+            robotDeviceList.add(device);
+            robotSpinnerAdapter.add(displayName);
+            robotSpinnerAdapter.notifyDataSetChanged();
+          }
+        });
+  }
+
+  @Override
+  public void onScanFinished() {
+    runOnUiThread(() -> robotStatusView.setText("BLE scan done"));
   }
 
   /**
@@ -579,10 +664,8 @@ public class HelloArActivity extends AppCompatActivity
     return "None";
   }
 
-  private void updateTopControlLabels(Button depthSourceButton, Button instantPlacementButton) {
+  private void updateTopControlLabels(Button depthSourceButton) {
     depthSourceButton.setText("Depth: " + depthSourceLabel());
-    instantPlacementButton.setText(
-        "Instant: " + (instantPlacementSettings.isInstantPlacementEnabled() ? "ON" : "OFF"));
   }
 
   // DisplayListener methods
