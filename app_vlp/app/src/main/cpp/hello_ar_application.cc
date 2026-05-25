@@ -443,17 +443,17 @@ void HelloArApplication::OnDrawFrame(bool depthColorVisualizationEnabled,
     has_latest_stream_frame_ = true;
   }
 
-  bool need_stream_image = false;
+  bool need_stream_image = force_stream_image_;
   bool need_record_image = false;
   const int depth_source = depth_source_.load();
   const bool use_arcore_depth_source = (depth_source == 1);
   const bool use_da2_depth_source = (depth_source == 2);
   bool need_da2_image = use_da2_depth_source && (da2_pipeline_ != nullptr);
-  const bool need_stream_buffer_update = need_stream_image;
 #if HELLO_AR_ENABLE_MAPMIND_VLP
-  need_stream_image = mapmind::vlp::HasGrpcServer();
+  need_stream_image = need_stream_image || mapmind::vlp::HasGrpcServer();
   need_record_image = mapmind::vlp::Recording();
 #endif
+  const bool need_stream_buffer_update = need_stream_image;
 
   int32_t is_depth_supported = 0;
   ArSession_isDepthModeSupported(ar_session_, AR_DEPTH_MODE_AUTOMATIC, &is_depth_supported);
