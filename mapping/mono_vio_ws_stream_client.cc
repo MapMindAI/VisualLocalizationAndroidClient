@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <deque>
 #include <memory>
 #include <sstream>
@@ -30,6 +31,8 @@ DEFINE_bool(enable_voxblox, true, "Enable Voxblox TSDF/ESDF integration from rec
 DEFINE_double(voxblox_voxel_size_m, 0.2, "Voxblox voxel size in meters.");
 DEFINE_int32(esdf_update_every_n, 10,
              "Update/publish ESDF points every N successful Voxblox integrations.");
+DEFINE_double(esdf2d_height_m, 0.0, "World-space Y height (meters) for the 2D ESDF plane.");
+DEFINE_int32(esdf2d_max_cells, 65536, "Maximum cells to publish for 2D ESDF plane.");
 
 DEFINE_bool(enable_websocket, true, "Enable websocket stream server.");
 DEFINE_int32(websocket_port, 9002, "Websocket server port.");
@@ -106,9 +109,11 @@ int main(int argc, char** argv) {
   const auto start_time = std::chrono::steady_clock::now();
   std::deque<std::array<float, 3>> trajectory;
   std::vector<mapping::VoxbloxProcessor::VizPoint> esdf_viz_points;
+  mapping::VoxbloxProcessor::EsdfPlane2D esdf2d_slice;
   std::vector<uint8_t> img_buf;
   img_buf.reserve(256 * 1024);
   bool esdf_points_updated = false;
+  bool esdf2d_updated = false;
   auto last_web_send = std::chrono::steady_clock::now();
 
   int64_t last_rel_ns = -1;
@@ -171,6 +176,8 @@ int main(int argc, char** argv) {
           if ((integrated_frames % FLAGS_esdf_update_every_n) == 0) {
             voxblox_processor->GetEsdfVisualization(&esdf_viz_points);
             esdf_points_updated = true;
+            esdf2d_updated = voxblox_processor->GetEsdfPlaneSlice2D(
+                static_cast<float>(FLAGS_esdf2d_height_m), &esdf2d_slice, FLAGS_esdf2d_max_cells);
           }
           depth_status = "depth: integrated";
         } else {
@@ -256,6 +263,27 @@ int main(int argc, char** argv) {
           }
           oss << "]";
           esdf_points_updated = false;
+        }
+        if (esdf2d_updated) {
+          oss << ",\"esdf2d\":{";
+          oss << "\"width\":" << esdf2d_slice.width << ",";
+          oss << "\"height\":" << esdf2d_slice.height << ",";
+          oss << "\"resolution_m\":" << esdf2d_slice.resolution_m << ",";
+          oss << "\"origin_x_m\":" << esdf2d_slice.origin_x_m << ",";
+          oss << "\"origin_z_m\":" << esdf2d_slice.origin_z_m << ",";
+          oss << "\"plane_height_m\":" << esdf2d_slice.plane_height_m << ",";
+          oss << "\"distances\":[";
+          for (size_t i = 0; i < esdf2d_slice.distances.size(); ++i) {
+            if (i) oss << ",";
+            const float v = esdf2d_slice.distances[i];
+            if (std::isfinite(v)) {
+              oss << v;
+            } else {
+              oss << "null";
+            }
+          }
+          oss << "]}";
+          esdf2d_updated = false;
         }
         oss << "}";
         web_server->BroadcastText(oss.str());

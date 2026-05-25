@@ -8,6 +8,7 @@
     #root{display:grid;grid-template-columns:25% 75%;height:100%}
     #left{padding:8px;box-sizing:border-box}
     #img{width:100%;border:1px solid #333}
+    #esdf2d{width:100%;border:1px solid #333;margin-top:8px;image-rendering:pixelated}
     #meta{margin-top:8px;font-size:14px;line-height:1.4}
     #view{width:100%;height:100%;display:block}
   </style>
@@ -23,6 +24,7 @@
         <div id="scale">scale: n/a</div>
         <div id="vox">voxblox: off</div>
         <div id="cloud">cloud: 0</div>
+        <div id="esdf2dMeta">esdf2d: n/a</div>
         <div>
           <label for="esdfColorMode">ESDF Color:</label>
           <select id="esdfColorMode">
@@ -35,6 +37,7 @@
           <label><input type="checkbox" id="followCam"> follow camera</label>
         </div>
       </div>
+      <canvas id="esdf2d" width="256" height="256"></canvas>
     </div>
     <canvas id="view"></canvas>
   </div>
@@ -57,6 +60,11 @@
     const scaleEl = document.getElementById('scale');
     const voxEl = document.getElementById('vox');
     const cloudEl = document.getElementById('cloud');
+    const esdf2dMetaEl = document.getElementById('esdf2dMeta');
+    const esdf2dCanvas = document.getElementById('esdf2d');
+    const esdf2dCtx = esdf2dCanvas.getContext('2d');
+    const esdf2dOff = document.createElement('canvas');
+    const esdf2dOffCtx = esdf2dOff.getContext('2d');
     const esdfColorModeEl = document.getElementById('esdfColorMode');
     const followCamEl = document.getElementById('followCam');
 
@@ -214,6 +222,49 @@
       cloudEl.textContent = `cloud: ${points.length}`;
     }
 
+    function distToRgb(v, maxAbs){
+      if(v === null || v === undefined || !Number.isFinite(v)) return [10,10,10];
+      const t = Math.max(-1.0, Math.min(1.0, v / Math.max(1e-4, maxAbs)));
+      if(t < 0){
+        const a = Math.round(255 * (-t));
+        return [255, 255 - a, 255 - a];
+      }
+      const a = Math.round(255 * t);
+      return [255 - a, 255, 255 - a];
+    }
+
+    function setEsdf2D(esdf2d){
+      if(!esdf2d || !esdf2d.width || !esdf2d.height || !Array.isArray(esdf2d.distances)){
+        esdf2dMetaEl.textContent = 'esdf2d: n/a';
+        esdf2dCtx.clearRect(0,0,esdf2dCanvas.width,esdf2dCanvas.height);
+        return;
+      }
+      const w = esdf2d.width|0;
+      const h = esdf2d.height|0;
+      const vals = esdf2d.distances;
+      let maxAbs = 0.1;
+      for(let i=0;i<vals.length;i++){
+        const v = vals[i];
+        if(Number.isFinite(v)) maxAbs = Math.max(maxAbs, Math.abs(v));
+      }
+      const imgData = esdf2dCtx.createImageData(w, h);
+      for(let i=0;i<w*h;i++){
+        const rgb = distToRgb(vals[i], maxAbs);
+        const j = i*4;
+        imgData.data[j] = rgb[0];
+        imgData.data[j+1] = rgb[1];
+        imgData.data[j+2] = rgb[2];
+        imgData.data[j+3] = 255;
+      }
+      esdf2dOff.width = w;
+      esdf2dOff.height = h;
+      esdf2dOffCtx.putImageData(imgData,0,0);
+      esdf2dCtx.clearRect(0,0,esdf2dCanvas.width,esdf2dCanvas.height);
+      esdf2dCtx.drawImage(esdf2dOff, 0, 0, esdf2dCanvas.width, esdf2dCanvas.height);
+      esdf2dMetaEl.textContent =
+          `esdf2d: ${w}x${h} h=${(esdf2d.plane_height_m||0).toFixed(2)}m res=${(esdf2d.resolution_m||0).toFixed(3)}m`;
+    }
+
     let ws = null;
     let reconnectTimer = null;
     function connectWs(){
@@ -242,6 +293,9 @@
         }
         if (Object.prototype.hasOwnProperty.call(d, 'esdf_points')) {
           setEsdfPoints(d.esdf_points || [], v.voxel_size_m || 0.1);
+        }
+        if (Object.prototype.hasOwnProperty.call(d, 'esdf2d')) {
+          setEsdf2D(d.esdf2d);
         }
       };
     }
