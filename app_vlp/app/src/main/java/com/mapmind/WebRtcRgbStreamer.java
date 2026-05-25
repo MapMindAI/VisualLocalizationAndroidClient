@@ -118,6 +118,9 @@ public class WebRtcRgbStreamer {
               @Override
               public void onIceGatheringChange(PeerConnection.IceGatheringState state) {
                 Log.i(TAG, "ICE gathering state: " + state);
+                if (state == PeerConnection.IceGatheringState.COMPLETE) {
+                  janusIo.execute(WebRtcRgbStreamer.this::sendTrickleCompleted);
+                }
               }
 
               @Override
@@ -211,9 +214,8 @@ public class WebRtcRgbStreamer {
       frameTsNs = lastPushedFrameTsNs + 1_000_000L;
     }
 
-    byte[] frameBytes = java.util.Arrays.copyOf(nv21, expected);
-
-    NV21Buffer buffer = new NV21Buffer(frameBytes, width, height, null);
+    // Avoid per-frame copy to reduce GC spikes and jitter.
+    NV21Buffer buffer = new NV21Buffer(nv21, width, height, null);
     VideoFrame frame = new VideoFrame(buffer, 0, frameTsNs);
 
     videoSource.getCapturerObserver().onFrameCaptured(frame);
@@ -361,7 +363,7 @@ public class WebRtcRgbStreamer {
                       body.put("request", "publish");
                       body.put("audio", false);
                       body.put("video", true);
-                      body.put("bitrate", 250000);
+                      // body.put("bitrate", 180000);
 
                       JSONObject jsep = new JSONObject();
                       jsep.put("type", "offer");
@@ -416,6 +418,19 @@ public class WebRtcRgbStreamer {
       postJson(sessionHandleUrl(), req);
     } catch (Exception e) {
       Log.w(TAG, "Trickle failed", e);
+    }
+  }
+
+  private void sendTrickleCompleted() {
+    if (!started || sessionId == 0 || handleId == 0) return;
+    try {
+      JSONObject req = baseJanus("trickle");
+      JSONObject completed = new JSONObject();
+      completed.put("completed", true);
+      req.put("candidate", completed);
+      postJson(sessionHandleUrl(), req);
+    } catch (Exception e) {
+      Log.w(TAG, "Trickle completed failed", e);
     }
   }
 
