@@ -27,12 +27,14 @@ DEFINE_bool(replay_realtime, true, "Replay using recorded relative timestamps.")
 DEFINE_double(replay_speed, 1.0, "Replay speed multiplier.");
 
 DEFINE_bool(enable_voxblox, true, "Enable Voxblox TSDF/ESDF integration from recorder depth.");
-DEFINE_double(voxblox_voxel_size_m, 0.1, "Voxblox voxel size in meters.");
+DEFINE_double(voxblox_voxel_size_m, 0.2, "Voxblox voxel size in meters.");
+DEFINE_int32(esdf_update_every_n, 10,
+             "Update/publish ESDF points every N successful Voxblox integrations.");
 
 DEFINE_bool(enable_websocket, true, "Enable websocket stream server.");
 DEFINE_int32(websocket_port, 9002, "Websocket server port.");
 DEFINE_string(web_client_html, "mapping/backend/web_client.html", "Path to web client html.");
-DEFINE_double(web_send_hz, 10.0, "Websocket broadcast rate.");
+DEFINE_double(web_send_hz, 15.0, "Websocket broadcast rate.");
 DEFINE_int32(web_max_traj_points, 1200, "Max trajectory points sent to browser.");
 
 cv::Mat BuildDepthPanel(const cv::Mat& depth_m, const cv::Size& target_size,
@@ -72,6 +74,10 @@ int main(int argc, char** argv) {
   }
   if (FLAGS_replay_speed <= 0.0) {
     LOG(ERROR) << "--replay_speed must be > 0";
+    return 1;
+  }
+  if (FLAGS_esdf_update_every_n <= 0) {
+    LOG(ERROR) << "--esdf_update_every_n must be > 0";
     return 1;
   }
 
@@ -162,8 +168,11 @@ int main(int argc, char** argv) {
         const bool ok = voxblox_processor->Integrate(depth_m, packet.pose, depth_fx, depth_fy,
                                                      depth_cx, depth_cy);
         if (ok) {
-          voxblox_processor->GetEsdfVisualization(&esdf_viz_points);
-          esdf_points_updated = true;
+          const int integrated_frames = voxblox_processor->IntegratedFrameCount();
+          if ((integrated_frames % FLAGS_esdf_update_every_n) == 0) {
+            voxblox_processor->GetEsdfVisualization(&esdf_viz_points);
+            esdf_points_updated = true;
+          }
           depth_status = "depth: integrated";
         } else {
           depth_status = "depth: rejected by voxblox";
