@@ -18,8 +18,10 @@
 #include <string>
 #include <vector>
 
+#include <Eigen/Geometry>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <sophus/se3.hpp>
 
 namespace mapmind {
 namespace vlp {
@@ -409,6 +411,22 @@ void PushFrameYuvNv21(int64_t frame_timestamp_ns, int width, int height,
   constexpr size_t kHeaderSize = 64;
   std::string payload(kHeaderSize + jpg_bytes.size(), '\0');
   char* h = &payload[0];
+  Eigen::Quaternionf q(qw, qx, qy, qz);
+  q.normalize();
+  Sophus::SE3f pose(q, Eigen::Vector3f(tx, ty, tz));
+  const Sophus::SE3f kTransformCameraToOpenGLDevice(
+      Eigen::Quaternionf(0.0f, 1.0f, 0.0f, 0.0f), Eigen::Vector3f::Zero());
+  pose = pose * kTransformCameraToOpenGLDevice;
+  q = pose.unit_quaternion();
+  const Eigen::Vector3f t = pose.translation();
+  qx = q.x();
+  qy = q.y();
+  qz = q.z();
+  qw = q.w();
+  tx = t.x();
+  ty = t.y();
+  tz = t.z();
+
   std::memcpy(h + 0, &kFrameMagic, sizeof(kFrameMagic));
   std::memcpy(h + 4, &frame_timestamp_ns, sizeof(frame_timestamp_ns));
   std::memcpy(h + 12, &width, sizeof(width));
