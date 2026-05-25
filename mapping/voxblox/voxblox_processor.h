@@ -22,6 +22,10 @@ class VoxbloxProcessor {
   };
 
   struct Config {
+    Config(float _voxel_size_m): voxel_size_m(_voxel_size_m) {
+      truncation_distance_m = voxel_size_m * 2;
+      esdf_vis_distance_m = voxel_size_m * 3;
+    }
     float voxel_size_m = 0.1f;
     int voxels_per_side = 16;
     float truncation_distance_m = 0.2f;

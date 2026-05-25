@@ -88,8 +88,7 @@ int main(int argc, char** argv) {
 
   std::unique_ptr<mapping::VoxbloxProcessor> voxblox_processor;
   if (FLAGS_enable_voxblox) {
-    mapping::VoxbloxProcessor::Config cfg;
-    cfg.voxel_size_m = static_cast<float>(FLAGS_voxblox_voxel_size_m);
+    mapping::VoxbloxProcessor::Config cfg(FLAGS_voxblox_voxel_size_m);
     voxblox_processor = std::make_unique<mapping::VoxbloxProcessor>(cfg);
     LOG(INFO) << "[Voxblox] enabled.";
   }
