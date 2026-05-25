@@ -37,6 +37,7 @@ extern "C" {
 namespace {
 // maintain a reference to the JVM so we can use it later.
 static JavaVM *g_vm = nullptr;
+static jobject g_control_activity_ref = nullptr;
 
 inline jlong jptr(hello_ar::HelloArApplication *native_hello_ar_application) {
   return reinterpret_cast<intptr_t>(native_hello_ar_application);
@@ -45,6 +46,30 @@ inline jlong jptr(hello_ar::HelloArApplication *native_hello_ar_application) {
 inline hello_ar::HelloArApplication *native(jlong ptr) {
   return reinterpret_cast<hello_ar::HelloArApplication *>(ptr);
 }
+
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+JNIEnv* GetOrAttachJniEnv() {
+  if (g_vm == nullptr) return nullptr;
+  JNIEnv* env = nullptr;
+  if (g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) {
+    return env;
+  }
+  if (g_vm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+    return nullptr;
+  }
+  return env;
+}
+
+void OnGrpcControlCommand(int cmd, void*) {
+  JNIEnv* env = GetOrAttachJniEnv();
+  if (env == nullptr || g_control_activity_ref == nullptr) return;
+  jclass cls = env->GetObjectClass(g_control_activity_ref);
+  if (cls == nullptr) return;
+  jmethodID mid = env->GetMethodID(cls, "onNativeGrpcControlCommand", "(I)V");
+  if (mid == nullptr) return;
+  env->CallVoidMethod(g_control_activity_ref, mid, static_cast<jint>(cmd));
+}
+#endif
 
 }  // namespace
 
@@ -95,7 +120,14 @@ JNI_METHOD(jboolean, isDa2Ready)
 }
 
 JNI_METHOD(void, destroyNativeApplication)
-(JNIEnv *, jclass, jlong native_application) {
+(JNIEnv *env, jclass, jlong native_application) {
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  mapmind::vlp::SetControlCommandCallback(nullptr, nullptr);
+  if (g_control_activity_ref != nullptr) {
+    env->DeleteGlobalRef(g_control_activity_ref);
+    g_control_activity_ref = nullptr;
+  }
+#endif
   delete native(native_application);
 }
 
@@ -108,6 +140,14 @@ JNI_METHOD(void, onResume)
 (JNIEnv *env, jclass, jlong native_application, jobject context,
  jobject activity) {
   native(native_application)->OnResume(env, context, activity);
+#if HELLO_AR_ENABLE_MAPMIND_VLP
+  if (g_control_activity_ref != nullptr) {
+    env->DeleteGlobalRef(g_control_activity_ref);
+    g_control_activity_ref = nullptr;
+  }
+  g_control_activity_ref = env->NewGlobalRef(activity);
+  mapmind::vlp::SetControlCommandCallback(OnGrpcControlCommand, nullptr);
+#endif
 }
 
 JNI_METHOD(void, onGlSurfaceCreated)
