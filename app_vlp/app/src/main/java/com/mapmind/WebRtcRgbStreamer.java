@@ -37,6 +37,7 @@ public class WebRtcRgbStreamer {
   private static final String TAG = "[MapMind Janus]";
   private static final String VIDEO_TRACK_ID = "rgb_track";
   private static final String STREAM_ID = "rgb_stream";
+  private static final String PUBLISH_DISPLAY_NAME = "ESP32CAM";
 
   private final EglBase eglBase;
   private final PeerConnectionFactory factory;
@@ -56,6 +57,10 @@ public class WebRtcRgbStreamer {
 
   private long sessionId = 0;
   private long handleId = 0;
+  private long lastPushedFrameTsNs = -1L;
+  private long lastPushedWallNs = -1L;
+  private long publisherFeedId = 0L;
+  private long lastKeyframeReqNs = 0L;
 
   public WebRtcRgbStreamer(Context context) {
     PeerConnectionFactory.initialize(
@@ -113,6 +118,9 @@ public class WebRtcRgbStreamer {
               @Override
               public void onIceGatheringChange(PeerConnection.IceGatheringState state) {
                 Log.i(TAG, "ICE gathering state: " + state);
+                if (state == PeerConnection.IceGatheringState.COMPLETE) {
+                  janusIo.execute(WebRtcRgbStreamer.this::sendTrickleCompleted);
+                }
               }
 
               @Override
@@ -181,6 +189,10 @@ public class WebRtcRgbStreamer {
       peerConnection.dispose();
       peerConnection = null;
     }
+    publisherFeedId = 0L;
+    lastPushedFrameTsNs = -1L;
+    lastPushedWallNs = -1L;
+    lastKeyframeReqNs = 0L;
   }
 
   public void pushNv21Frame(byte[] nv21, int width, int height, long timestampNs) {
@@ -192,14 +204,26 @@ public class WebRtcRgbStreamer {
       return;
     }
 
-    byte[] frameBytes = java.util.Arrays.copyOf(nv21, expected);
+    final long nowNs = System.nanoTime();
+    // Guard against encoder overload and non-monotonic source timestamps.
+    if (lastPushedWallNs > 0 && (nowNs - lastPushedWallNs) < 50_000_000L) {
+      return;
+    }
+    long frameTsNs = timestampNs > 0 ? timestampNs : nowNs;
+    if (lastPushedFrameTsNs > 0 && frameTsNs <= lastPushedFrameTsNs) {
+      frameTsNs = lastPushedFrameTsNs + 1_000_000L;
+    }
 
-    NV21Buffer buffer = new NV21Buffer(frameBytes, width, height, null);
-    VideoFrame frame = new VideoFrame(buffer, 0, timestampNs > 0 ? timestampNs : System.nanoTime());
+    // Avoid per-frame copy to reduce GC spikes and jitter.
+    NV21Buffer buffer = new NV21Buffer(nv21, width, height, null);
+    VideoFrame frame = new VideoFrame(buffer, 0, frameTsNs);
 
     videoSource.getCapturerObserver().onFrameCaptured(frame);
 
     frame.release();
+    lastPushedFrameTsNs = frameTsNs;
+    lastPushedWallNs = nowNs;
+    maybeRequestKeyframe(nowNs);
 
     // Log.i(TAG, "pushNv21Frame: " + width + "x" + height + ", len=" + nv21.length);
   }
@@ -233,7 +257,7 @@ public class WebRtcRgbStreamer {
       body.put("ptype", "publisher");
       body.put("room", roomId);
       if (!roomPin.isEmpty()) body.put("pin", roomPin);
-      body.put("display", "android_rgb_publisher");
+      body.put("display", PUBLISH_DISPLAY_NAME);
       JSONObject joinReq = baseJanus("message");
       joinReq.put("body", body);
       postJson(sessionHandleUrl(), joinReq);
@@ -255,6 +279,12 @@ public class WebRtcRgbStreamer {
         }
         if (!"event".equals(janusType)) {
           continue;
+        }
+        JSONObject pluginData = evt.optJSONObject("plugindata");
+        JSONObject data = pluginData != null ? pluginData.optJSONObject("data") : null;
+        if (data != null && "joined".equals(data.optString("videoroom"))) {
+          publisherFeedId = data.optLong("id", 0L);
+          Log.i(TAG, "Publisher feed id: " + publisherFeedId);
         }
         JSONObject jsep = evt.optJSONObject("jsep");
         if (jsep != null && "answer".equalsIgnoreCase(jsep.optString("type"))) {
@@ -289,6 +319,26 @@ public class WebRtcRgbStreamer {
     }
   }
 
+  private void maybeRequestKeyframe(long nowNs) {
+    if (!started || !ready || sessionId == 0 || handleId == 0) return;
+    if (lastKeyframeReqNs != 0 && (nowNs - lastKeyframeReqNs) < 2_000_000_000L) return;
+    lastKeyframeReqNs = nowNs;
+    janusIo.execute(
+        () -> {
+          try {
+            JSONObject body = new JSONObject();
+            body.put("request", "configure");
+            body.put("keyframe", true);
+            JSONObject req = baseJanus("message");
+            req.put("body", body);
+            postJson(sessionHandleUrl(), req);
+            Log.i(TAG, "Requested keyframe");
+          } catch (Exception e) {
+            Log.w(TAG, "Keyframe request failed", e);
+          }
+        });
+  }
+
   private void createOfferAndPublish() {
     if (peerConnection == null) return;
 
@@ -313,6 +363,7 @@ public class WebRtcRgbStreamer {
                       body.put("request", "publish");
                       body.put("audio", false);
                       body.put("video", true);
+                      // body.put("bitrate", 180000);
 
                       JSONObject jsep = new JSONObject();
                       jsep.put("type", "offer");
@@ -367,6 +418,19 @@ public class WebRtcRgbStreamer {
       postJson(sessionHandleUrl(), req);
     } catch (Exception e) {
       Log.w(TAG, "Trickle failed", e);
+    }
+  }
+
+  private void sendTrickleCompleted() {
+    if (!started || sessionId == 0 || handleId == 0) return;
+    try {
+      JSONObject req = baseJanus("trickle");
+      JSONObject completed = new JSONObject();
+      completed.put("completed", true);
+      req.put("candidate", completed);
+      postJson(sessionHandleUrl(), req);
+    } catch (Exception e) {
+      Log.w(TAG, "Trickle completed failed", e);
     }
   }
 

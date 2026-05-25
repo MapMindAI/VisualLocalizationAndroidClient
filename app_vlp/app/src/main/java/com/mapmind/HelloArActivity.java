@@ -27,6 +27,7 @@ import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Log;
 import android.view.GestureDetector;
@@ -77,7 +78,10 @@ public class HelloArActivity extends AppCompatActivity
   private boolean robotPanelVisible = true;
   private WebRtcRgbStreamer webRtcStreamer;
   private boolean webRtcEnabled = false;
-  private final Handler webRtcFrameHandler = new Handler(Looper.getMainLooper());
+  private HandlerThread webRtcFrameThread;
+  private Handler webRtcFrameHandler;
+  private long lastWebRtcFrameTsNs = -1L;
+  private long lastWebRtcPushWallNs = 0L;
 
   private boolean viewportChanged = false;
   private int viewportWidth;
@@ -291,6 +295,13 @@ public class HelloArActivity extends AppCompatActivity
   }
 
   private void startWebRtcFramePump() {
+    if (webRtcFrameThread == null) {
+      webRtcFrameThread = new HandlerThread("WebRtcFramePump");
+      webRtcFrameThread.start();
+      webRtcFrameHandler = new Handler(webRtcFrameThread.getLooper());
+    }
+    lastWebRtcFrameTsNs = -1L;
+    lastWebRtcPushWallNs = 0L;
     webRtcFrameHandler.post(
         new Runnable() {
           @Override
@@ -304,18 +315,37 @@ public class HelloArActivity extends AppCompatActivity
               int width = (int) info[1];
               int height = (int) info[2];
               long tsNs = info[0];
-              if (width > 0 && height > 0 && nv21.length >= (width * height * 3 / 2)) {
-                webRtcStreamer.pushNv21Frame(nv21, width, height, tsNs);
-                webrtcStatusView.setText("WebRTC: streaming " + width + "x" + height);
+              final long nowNs = System.nanoTime();
+              final boolean hasImage = nv21.length >= (width * height * 3 / 2);
+              final boolean hasNewFrame = tsNs > 0 && tsNs != lastWebRtcFrameTsNs;
+              final boolean heartbeatDue =
+                  lastWebRtcPushWallNs == 0L || (nowNs - lastWebRtcPushWallNs) > 300_000_000L;
+              if (width > 0
+                  && height > 0
+                  && hasImage
+                  && (hasNewFrame || heartbeatDue)) {
+                long pushTsNs = hasNewFrame ? tsNs : nowNs;
+                webRtcStreamer.pushNv21Frame(nv21, width, height, pushTsNs);
+                if (hasNewFrame) {
+                  lastWebRtcFrameTsNs = tsNs;
+                }
+                lastWebRtcPushWallNs = nowNs;
+                final String status =
+                    hasNewFrame
+                        ? ("WebRTC: streaming " + width + "x" + height)
+                        : ("WebRTC: streaming (hold) " + width + "x" + height);
+                runOnUiThread(() -> webrtcStatusView.setText(status));
               }
             }
-            webRtcFrameHandler.postDelayed(this, 66);
+            webRtcFrameHandler.postDelayed(this, 80);
           }
         });
   }
 
   private void stopWebRtcFramePump() {
-    webRtcFrameHandler.removeCallbacksAndMessages(null);
+    if (webRtcFrameHandler != null) {
+      webRtcFrameHandler.removeCallbacksAndMessages(null);
+    }
   }
 
   private void setupRobotPanel() {
@@ -448,6 +478,11 @@ public class HelloArActivity extends AppCompatActivity
   public void onDestroy() {
     super.onDestroy();
     stopWebRtcFramePump();
+    if (webRtcFrameThread != null) {
+      webRtcFrameThread.quitSafely();
+      webRtcFrameThread = null;
+      webRtcFrameHandler = null;
+    }
     JniInterface.setStreamImageEnabled(nativeApplication, false);
     if (webRtcStreamer != null) {
       webRtcStreamer.release();
