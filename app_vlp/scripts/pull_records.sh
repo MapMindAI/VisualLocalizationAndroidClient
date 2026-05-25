@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-RECORD_PATH=/storage/emulated/0/Android/data/com.google.ar.core.examples.c.helloar/files
+RECORD_PATH=/storage/emulated/0/Android/data/com.mapmind/files
 adb shell ls ${RECORD_PATH}
 
 adb pull ${RECORD_PATH} ../data
