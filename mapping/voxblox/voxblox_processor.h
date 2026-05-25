@@ -21,7 +21,21 @@ class VoxbloxProcessor {
     float v = 0.0f;  // Signed ESDF distance value for client-side color mapping.
   };
 
+  struct EsdfPlane2D {
+    int width = 0;
+    int height = 0;
+    float resolution_m = 0.0f;
+    float origin_x_m = 0.0f;
+    float origin_z_m = 0.0f;
+    float plane_height_m = 0.0f;
+    std::vector<float> distances;  // Row-major [row=z][col=x], meters.
+  };
+
   struct Config {
+    Config(float _voxel_size_m): voxel_size_m(_voxel_size_m) {
+      truncation_distance_m = voxel_size_m * 2;
+      esdf_vis_distance_m = voxel_size_m * 3;
+    }
     float voxel_size_m = 0.1f;
     int voxels_per_side = 16;
     float truncation_distance_m = 0.2f;
@@ -32,7 +46,6 @@ class VoxbloxProcessor {
     float esdf_max_distance_m = 2.0f;
     bool esdf_show_free = false;
     bool esdf_only_occupied = true;
-    bool esdf_use_slice = false;
     int esdf_slice_axis = 2;
     float esdf_slice_level_m = 0.0f;
     int esdf_full_update_every_n = 20;
@@ -54,6 +67,7 @@ class VoxbloxProcessor {
                  float cy);
   void GetTsdfVisualization(std::vector<VizPoint>* points) const;
   void GetEsdfVisualization(std::vector<VizPoint>* points) const;
+  bool GetEsdfPlaneSlice2D(float plane_height_m, EsdfPlane2D* out, int max_cells) const;
 
   int IntegratedFrameCount() const;
 

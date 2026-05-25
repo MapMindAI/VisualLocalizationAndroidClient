@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -208,6 +209,105 @@ struct VoxbloxProcessor::Impl {
     }
   }
 
+  bool GetEsdfPlaneSlice2D(float plane_height_m, EsdfPlane2D* out, int max_cells) const {
+    if (out == nullptr || !esdf_map) {
+      return false;
+    }
+    out->width = 0;
+    out->height = 0;
+    out->distances.clear();
+    out->resolution_m = config.voxel_size_m;
+    out->origin_x_m = 0.0f;
+    out->origin_z_m = 0.0f;
+    out->plane_height_m = plane_height_m;
+
+    const auto& layer = esdf_map->getEsdfLayer();
+    voxblox::BlockIndexList blocks;
+    layer.getAllAllocatedBlocks(&blocks);
+    if (blocks.empty()) {
+      return false;
+    }
+
+    const float half_thickness = config.voxel_size_m * 0.5f + 1e-6f;
+    float min_x = std::numeric_limits<float>::infinity();
+    float max_x = -std::numeric_limits<float>::infinity();
+    float min_z = std::numeric_limits<float>::infinity();
+    float max_z = -std::numeric_limits<float>::infinity();
+    bool has_samples = false;
+
+    for (const voxblox::BlockIndex& block_idx : blocks) {
+      auto block_ptr = layer.getBlockPtrByIndex(block_idx);
+      if (!block_ptr) {
+        continue;
+      }
+      const size_t n = block_ptr->num_voxels();
+      for (size_t i = 0; i < n; ++i) {
+        const voxblox::EsdfVoxel& voxel = block_ptr->getVoxelByLinearIndex(i);
+        if (!std::isfinite(voxel.distance) || !voxel.observed) {
+          continue;
+        }
+        const voxblox::Point p = block_ptr->computeCoordinatesFromLinearIndex(i);
+        if (std::abs(p.y() - plane_height_m) > half_thickness) {
+          continue;
+        }
+        min_x = std::min(min_x, p.x());
+        max_x = std::max(max_x, p.x());
+        min_z = std::min(min_z, p.z());
+        max_z = std::max(max_z, p.z());
+        has_samples = true;
+      }
+    }
+
+    if (!has_samples) {
+      return false;
+    }
+
+    const float voxel_size = config.voxel_size_m;
+    const float eps = voxel_size * 1e-4f;
+    const int width = static_cast<int>(std::floor((max_x - min_x) / voxel_size + 1.0f + eps));
+    const int height = static_cast<int>(std::floor((max_z - min_z) / voxel_size + 1.0f + eps));
+    if (width <= 0 || height <= 0) {
+      return false;
+    }
+    if (max_cells > 0 && static_cast<int64_t>(width) * static_cast<int64_t>(height) > max_cells) {
+      return false;
+    }
+
+    out->width = width;
+    out->height = height;
+    out->origin_x_m = min_x;
+    out->origin_z_m = min_z;
+    out->distances.assign(static_cast<size_t>(width) * static_cast<size_t>(height),
+                          std::numeric_limits<float>::quiet_NaN());
+
+    for (const voxblox::BlockIndex& block_idx : blocks) {
+      auto block_ptr = layer.getBlockPtrByIndex(block_idx);
+      if (!block_ptr) {
+        continue;
+      }
+      const size_t n = block_ptr->num_voxels();
+      for (size_t i = 0; i < n; ++i) {
+        const voxblox::EsdfVoxel& voxel = block_ptr->getVoxelByLinearIndex(i);
+        if (!std::isfinite(voxel.distance) || !voxel.observed) {
+          continue;
+        }
+        const voxblox::Point p = block_ptr->computeCoordinatesFromLinearIndex(i);
+        if (std::abs(p.y() - plane_height_m) > half_thickness) {
+          continue;
+        }
+        const int x = static_cast<int>(std::floor((p.x() - min_x) / voxel_size + eps));
+        const int z = static_cast<int>(std::floor((p.z() - min_z) / voxel_size + eps));
+        if (x < 0 || x >= width || z < 0 || z >= height) {
+          continue;
+        }
+        out->distances[static_cast<size_t>(z) * static_cast<size_t>(width) +
+                       static_cast<size_t>(x)] = voxel.distance;
+      }
+    }
+
+    return true;
+  }
+
   Config config;
   int integrated_frames = 0;
   std::unique_ptr<voxblox::TsdfMap> tsdf_map;
@@ -236,6 +336,11 @@ void VoxbloxProcessor::GetEsdfVisualization(std::vector<VizPoint>* points) const
   if (impl_) {
     impl_->GetEsdfVisualization(points);
   }
+}
+
+bool VoxbloxProcessor::GetEsdfPlaneSlice2D(float plane_height_m, EsdfPlane2D* out,
+                                           int max_cells) const {
+  return impl_ && impl_->GetEsdfPlaneSlice2D(plane_height_m, out, max_cells);
 }
 
 int VoxbloxProcessor::IntegratedFrameCount() const {

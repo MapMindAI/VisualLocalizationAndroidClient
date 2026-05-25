@@ -34,3 +34,17 @@ cc_library(
         ":utils",
     ],
 )
+
+cc_library(
+    name = "data_session",
+    srcs = ["data_session.cc"],
+    hdrs = ["data_session.h"],
+    copts = [
+        "-std=c++17",
+    ],
+    deps = [
+        ":frame_protocol",
+        ":utils",
+        "@opencv//:core",
+    ],
+)
