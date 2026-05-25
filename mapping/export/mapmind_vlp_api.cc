@@ -26,6 +26,7 @@ namespace vlp {
 namespace {
 
 constexpr char kServiceMethod[] = "/vlp.FrameStreamService/StreamFrames";
+constexpr char kControlMethod[] = "/vlp.ControlService/SendControl";
 constexpr char kFileMagic[] = "VLPREC1\n";
 constexpr uint32_t kFileVersion = 1;
 constexpr char kLogTag[] = "[mapmind_vlp_api]";
@@ -164,6 +165,25 @@ class StreamState {
 
   bool RecordingEnabled() const { return recording_.load(); }
 
+  void SetControlCommandCallback(ControlCommandCallback callback, void* user_data) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    control_callback_ = callback;
+    control_user_data_ = user_data;
+  }
+
+  void PublishControlCommand(int cmd) {
+    ControlCommandCallback callback = nullptr;
+    void* user_data = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      callback = control_callback_;
+      user_data = control_user_data_;
+    }
+    if (callback != nullptr) {
+      callback(cmd, user_data);
+    }
+  }
+
   void SetShuttingDown() {
     shutting_down_.store(true);
     cv_.notify_all();
@@ -225,6 +245,8 @@ class StreamState {
   int64_t latest_frame_ts_ns_ = 0;
   uint64_t frame_seq_ = 0;
   std::atomic<bool> shutting_down_{false};
+  ControlCommandCallback control_callback_ = nullptr;
+  void* control_user_data_ = nullptr;
 
   std::atomic<bool> recording_{false};
   std::unique_ptr<std::ofstream> record_ofs_;
@@ -248,11 +270,44 @@ class ByteStreamService final : public grpc::Service {
         new grpc::internal::ServerStreamingHandler<ByteStreamService, grpc::ByteBuffer,
                                                    grpc::ByteBuffer>(
             std::mem_fn(&ByteStreamService::StreamFrames), this)));
+    AddMethod(new grpc::internal::RpcServiceMethod(
+        kControlMethod, grpc::internal::RpcMethod::NORMAL_RPC,
+        new grpc::internal::RpcMethodHandler<ByteStreamService, grpc::ByteBuffer,
+                                             grpc::ByteBuffer>(
+            std::mem_fn(&ByteStreamService::SendControl), this)));
   }
 
   grpc::Status StreamFrames(grpc::ServerContext* context, const grpc::ByteBuffer* request,
                             grpc::ServerWriter<grpc::ByteBuffer>* writer) {
     return state_->StreamFrames(context, request, writer);
+  }
+
+  grpc::Status SendControl(grpc::ServerContext*, const grpc::ByteBuffer* request,
+                           grpc::ByteBuffer* response) {
+    if (request == nullptr) {
+      return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "empty request");
+    }
+    std::vector<grpc::Slice> slices;
+    const grpc::Status dump_status = request->Dump(&slices);
+    if (!dump_status.ok()) {
+      return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "invalid request");
+    }
+    std::string payload;
+    for (const auto& slice : slices) {
+      payload.append(reinterpret_cast<const char*>(slice.begin()), slice.size());
+    }
+    if (payload.size() < 4) {
+      return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "control payload < 4 bytes");
+    }
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(payload.data());
+    const int cmd = static_cast<int>(p[0]) | (static_cast<int>(p[1]) << 8) |
+                    (static_cast<int>(p[2]) << 16) | (static_cast<int>(p[3]) << 24);
+    state_->PublishControlCommand(cmd);
+
+    const std::string ack = "ok:" + std::to_string(cmd);
+    grpc::Slice out_slice(ack.data(), ack.size());
+    *response = grpc::ByteBuffer(&out_slice, 1);
+    return grpc::Status::OK;
   }
 
  private:
@@ -413,6 +468,12 @@ bool Recording() {
 void StopRecording() {
   auto& g = G();
   if (g.stream_state) g.stream_state->StopRecording();
+}
+
+void SetControlCommandCallback(ControlCommandCallback callback, void* user_data) {
+  auto& g = G();
+  if (!g.stream_state) return;
+  g.stream_state->SetControlCommandCallback(callback, user_data);
 }
 
 void SetLogsEnabled(bool enabled) { g_logs_enabled.store(enabled); }

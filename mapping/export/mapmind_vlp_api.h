@@ -12,6 +12,7 @@ namespace vlp {
 
 // Start/stop a gRPC server exposing:
 //   /vlp.FrameStreamService/StreamFrames (unary-stream, raw bytes)
+//   /vlp.ControlService/SendControl (unary-unary, raw int32 LE command)
 bool StartGrpcServer(int port);
 void StopGrpcServer();
 bool HasGrpcServer();
@@ -38,6 +39,9 @@ void PushDepthUpdate(int64_t rgb_timestamp_ns, int width, int height,
 bool StartRecording(const std::string& output_file_path);
 bool Recording();
 void StopRecording();
+
+using ControlCommandCallback = void (*)(int cmd, void* user_data);
+void SetControlCommandCallback(ControlCommandCallback callback, void* user_data);
 
 // Enable/disable internal logs (enabled by default).
 void SetLogsEnabled(bool enabled);

@@ -15,6 +15,7 @@ FRAME_MAGIC_ASCII = b"VLP2"
 FRAME_MAGIC_LEGACY = 0x564C5032
 DEPTH_TAG = b"DPT1"
 STREAM_METHOD = "/vlp.FrameStreamService/StreamFrames"
+CONTROL_METHOD = "/vlp.ControlService/SendControl"
 
 
 @dataclass
@@ -149,6 +150,18 @@ def stream_frames(host: str, port: int, timeout_s: float):
         response_deserializer=lambda b: b,
     )
     return call(b"subscribe", timeout=timeout_s)
+
+
+def send_control(host: str, port: int, cmd: int, timeout_s: float = 2.0) -> bytes:
+    target = f"{host}:{port}"
+    channel = grpc.insecure_channel(target)
+    call = channel.unary_unary(
+        CONTROL_METHOD,
+        request_serializer=lambda b: b,
+        response_deserializer=lambda b: b,
+    )
+    req = struct.pack("<i", int(cmd))
+    return call(req, timeout=timeout_s)
 
 
 def main() -> int:

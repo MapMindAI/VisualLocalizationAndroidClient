@@ -305,6 +305,18 @@ public class HelloArActivity extends AppCompatActivity
     bleServerManager.scanMokukuDevices(this);
   }
 
+  public void onNativeGrpcControlCommand(final int cmd) {
+    runOnUiThread(
+        () -> {
+          if (bleServerManager == null) {
+            robotStatusView.setText("BLE not ready; drop cmd=" + cmd);
+            return;
+          }
+          bleServerManager.sendStringMessage(cmd, cmd == 5 ? "STOP" : "MOVE");
+          robotStatusView.setText("gRPC cmd=" + cmd);
+        });
+  }
+
   private boolean ensureBlePermissions() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
       boolean fineLocationGranted =
