@@ -78,6 +78,7 @@ public class HelloArActivity extends AppCompatActivity
   private WebRtcRgbStreamer webRtcStreamer;
   private boolean webRtcEnabled = false;
   private final Handler webRtcFrameHandler = new Handler(Looper.getMainLooper());
+  private long lastWebRtcFrameTsNs = -1L;
 
   private boolean viewportChanged = false;
   private int viewportWidth;
@@ -291,6 +292,7 @@ public class HelloArActivity extends AppCompatActivity
   }
 
   private void startWebRtcFramePump() {
+    lastWebRtcFrameTsNs = -1L;
     webRtcFrameHandler.post(
         new Runnable() {
           @Override
@@ -304,12 +306,17 @@ public class HelloArActivity extends AppCompatActivity
               int width = (int) info[1];
               int height = (int) info[2];
               long tsNs = info[0];
-              if (width > 0 && height > 0 && nv21.length >= (width * height * 3 / 2)) {
+              if (width > 0
+                  && height > 0
+                  && tsNs > 0
+                  && tsNs != lastWebRtcFrameTsNs
+                  && nv21.length >= (width * height * 3 / 2)) {
                 webRtcStreamer.pushNv21Frame(nv21, width, height, tsNs);
+                lastWebRtcFrameTsNs = tsNs;
                 webrtcStatusView.setText("WebRTC: streaming " + width + "x" + height);
               }
             }
-            webRtcFrameHandler.postDelayed(this, 66);
+            webRtcFrameHandler.postDelayed(this, 100);
           }
         });
   }
