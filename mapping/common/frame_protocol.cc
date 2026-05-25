@@ -42,10 +42,6 @@ std::optional<FramePacket> ParseFramePayload(const std::string& payload) {
   q.normalize();
   packet.pose = Sophus::SE3f(q, Eigen::Vector3f(tx, ty, tz));
 
-  const Sophus::SE3f kTransformCameraToOpenGLDevice(
-      Eigen::Quaternionf(0.0f, 1.0f, 0.0f, 0.0f), Eigen::Vector3f::Zero());
-  packet.pose = packet.pose * kTransformCameraToOpenGLDevice;
-
   packet.jpeg_bytes.assign(data + kFrameHeaderSize, data + payload.size());
   if (packet.jpeg_bytes.empty()) {
     return std::nullopt;
