@@ -365,7 +365,9 @@ def main() -> int:
     paused_accum_sec = 0.0
     pause_start = None
     cv2 = None
-    resize_nearest = None
+    ensure_size_nearest = None
+    draw_header_text = None
+    make_triptych_panel = None
     depth_msg_to_bgr_turbo = None
     draw_traj_canvas = None
     traj_x = []
@@ -380,13 +382,17 @@ def main() -> int:
             ros2_dir = os.path.join(os.path.dirname(__file__), "ros2")
             if ros2_dir not in sys.path:
                 sys.path.append(ros2_dir)
+            from utils import draw_header_text as _draw_header_text  # type: ignore
             from utils import draw_traj_canvas as _draw_traj_canvas  # type: ignore
             from utils import depth_msg_to_bgr_turbo as _depth_msg_to_bgr_turbo  # type: ignore
-            from utils import resize_nearest as _resize_nearest  # type: ignore
+            from utils import ensure_size_nearest as _ensure_size_nearest  # type: ignore
+            from utils import make_triptych_panel as _make_triptych_panel  # type: ignore
 
+            draw_header_text = _draw_header_text
             draw_traj_canvas = _draw_traj_canvas
             depth_msg_to_bgr_turbo = _depth_msg_to_bgr_turbo
-            resize_nearest = _resize_nearest
+            ensure_size_nearest = _ensure_size_nearest
+            make_triptych_panel = _make_triptych_panel
             cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         except Exception as e:
             print(f"Display disabled: failed to import/open display deps ({e})")
@@ -453,7 +459,7 @@ def main() -> int:
                     ]
                 )
 
-            if do_display and cv2 is not None and resize_nearest is not None and depth_msg_to_bgr_turbo is not None and draw_traj_canvas is not None and jpeg_ok:
+            if do_display and cv2 is not None and ensure_size_nearest is not None and depth_msg_to_bgr_turbo is not None and draw_traj_canvas is not None and make_triptych_panel is not None and draw_header_text is not None and jpeg_ok:
                 frame_bgr = _decode_jpeg(rec)
                 if frame_bgr is not None:
                     frame_bgr = _draw_overlay(frame_bgr, rec)
@@ -471,10 +477,11 @@ def main() -> int:
                             ),
                             cv2.COLOR_GRAY2BGR,
                         )
-                    elif depth_bgr.shape[0] != h or depth_bgr.shape[1] != w:
-                        depth_bgr = resize_nearest(depth_bgr, w, h)
+                    else:
+                        depth_bgr = ensure_size_nearest(depth_bgr, w, h)
                     traj = draw_traj_canvas(traj_x, traj_z, w, h)
-                    panel = cv2.hconcat([frame_bgr, depth_bgr, traj])
+                    panel = make_triptych_panel(frame_bgr, depth_bgr, traj)
+                    draw_header_text(panel, f"vlprec keys: space pause, q quit")
                     cv2.imshow(window_name, panel)
 
             if do_display and cv2 is not None:

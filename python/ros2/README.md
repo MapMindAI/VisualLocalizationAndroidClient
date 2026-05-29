@@ -1,7 +1,7 @@
 
 ## Looper
 
-[LooperRobotics Insight 9](https://looper-robotics.com/), 
+[LooperRobotics Insight 9](https://looper-robotics.com/),
 [LooperRobotics Youtube](https://www.youtube.com/channel/UCJjQn8wxSn_McxOjN8EYM4g)
 
 ## Looper rosbag
@@ -48,6 +48,18 @@ Useful options:
 
 - `--speed 1.0` real-time replay
 - `--max-frames 300` stop early
+- `--save-video out/ros2_bag_view.mp4` save triptych video instead of live display
+- `--video-fps 30` set output video FPS when saving
+- `--log-every 60` print progress every N rendered frames
+
+Save video example:
+
+```bash
+python3 python/ros2/ros2_bag_viewer.py \
+  --bag data/extreme_movement/rosbag \
+  --save-video data/extreme_movement/ros2_bag_triptych.mp4 \
+  --video-fps 30
+```
 
 ## Live ROS2 subscribe and display
 

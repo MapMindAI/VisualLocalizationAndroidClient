@@ -12,7 +12,15 @@ from geometry_msgs.msg import PoseStamped  # type: ignore
 from rclpy.node import Node  # type: ignore
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy  # type: ignore
 from sensor_msgs.msg import CompressedImage, Image as RosImage  # type: ignore
-from utils import decode_compressed_image_rgb, depth_msg_to_bgr_turbo, draw_traj_canvas, resize_nearest, rot90_ccw
+from utils import (
+    decode_compressed_image_rgb,
+    depth_msg_to_bgr_turbo,
+    draw_header_text,
+    draw_traj_canvas,
+    ensure_size_nearest,
+    make_triptych_panel,
+    rot90_ccw,
+)
 
 
 @dataclass
@@ -108,18 +116,15 @@ def main() -> int:
                 traj_z = list(node.traj_z)
 
             if rgb is not None:
-                if depth.shape[0] != rgb.shape[0] or depth.shape[1] != rgb.shape[1]:
-                    depth_show = resize_nearest(depth, rgb.shape[1], rgb.shape[0])
-                else:
-                    depth_show = depth
+                depth_show = ensure_size_nearest(depth, rgb.shape[1], rgb.shape[0])
                 traj = draw_traj_canvas(traj_x, traj_z, rgb.shape[1], rgb.shape[0])
                 rgb_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                panel = np.hstack([rgb_bgr, depth_show, traj])
+                panel = make_triptych_panel(rgb_bgr, depth_show, traj)
                 if pose is not None:
                     txt = f"idx={frame_count-1} vio=({pose.x:.3f},{pose.y:.3f},{pose.z:.3f}) keys: space pause, q quit"
                 else:
                     txt = f"idx={frame_count-1} keys: space pause, q quit"
-                cv2.putText(panel, txt, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                draw_header_text(panel, txt)
                 cv2.imshow(window_name, panel)
                 last_frame_count = frame_count
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -8,7 +9,15 @@ import numpy as np  # type: ignore
 import rosbag2_py  # type: ignore
 from rclpy.serialization import deserialize_message  # type: ignore
 from rosidl_runtime_py.utilities import get_message  # type: ignore
-from utils import decode_compressed_image_rgb, depth_msg_to_bgr_turbo, draw_traj_canvas, resize_nearest, rot90_ccw
+from utils import (
+    decode_compressed_image_rgb,
+    depth_msg_to_bgr_turbo,
+    draw_header_text,
+    draw_traj_canvas,
+    ensure_size_nearest,
+    make_triptych_panel,
+    rot90_ccw,
+)
 
 
 @dataclass
@@ -32,9 +41,14 @@ def main() -> int:
     ap.add_argument("--vio-topic", default="/camera/camera/vio_20hz")
     ap.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier")
     ap.add_argument("--max-frames", type=int, default=0)
+    ap.add_argument("--save-video", default="", help="Optional output video path; when set, frames are written instead of shown")
+    ap.add_argument("--video-fps", type=float, default=30.0, help="Output video FPS for --save-video")
+    ap.add_argument("--log-every", type=int, default=60, help="Print progress every N rendered frames (0 to disable)")
     args = ap.parse_args()
     if args.speed <= 0:
         raise ValueError("--speed must be > 0")
+    if args.video_fps <= 0:
+        raise ValueError("--video-fps must be > 0")
 
     storage_options = rosbag2_py.StorageOptions(uri=args.bag, storage_id="sqlite3")
     converter_options = rosbag2_py.ConverterOptions(
@@ -69,7 +83,10 @@ def main() -> int:
 
     paused = False
     window_name = "Looper ROS bag Viewer"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    do_show = not bool(args.save_video)
+    if do_show:
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    writer = None
 
     while reader.has_next():
         topic, data, t_ns = reader.read_next()
@@ -108,57 +125,81 @@ def main() -> int:
         rel_ns = int(t_ns) - start_msg_time_ns
         frame_count += 1
         depth_show = rot90_ccw(latest_depth_rgb)
-        if depth_show.shape[0] != rgb.shape[0] or depth_show.shape[1] != rgb.shape[1]:
-            depth_show = resize_nearest(depth_show, rgb.shape[1], rgb.shape[0])
+        depth_show = ensure_size_nearest(depth_show, rgb.shape[1], rgb.shape[0])
 
         traj = draw_traj_canvas(traj_x, traj_z, rgb.shape[1], rgb.shape[0])
         rgb_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        panel = np.hstack([rgb_bgr, depth_show, traj])
+        panel = make_triptych_panel(rgb_bgr, depth_show, traj)
         if latest_pose is not None:
             txt = f"idx={frame_count-1} rel={rel_ns}ns vio=({latest_pose.x:.3f},{latest_pose.y:.3f},{latest_pose.z:.3f}) keys: space pause, q quit"
         else:
             txt = f"idx={frame_count-1} rel={rel_ns}ns keys: space pause, q quit"
-        cv2.putText(panel, txt, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
-        cv2.imshow(window_name, panel)
+        draw_header_text(panel, txt)
+        if writer is None and args.save_video:
+            os.makedirs(os.path.dirname(args.save_video) or ".", exist_ok=True)
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            writer = cv2.VideoWriter(args.save_video, fourcc, float(args.video_fps), (panel.shape[1], panel.shape[0]))
+            if not writer.isOpened():
+                raise RuntimeError(f"Failed to open video writer: {args.save_video}")
+        if writer is not None:
+            writer.write(panel)
+        elif do_show:
+            cv2.imshow(window_name, panel)
+
+        if args.log_every > 0 and (frame_count == 1 or frame_count % args.log_every == 0):
+            mode = "save-video" if writer is not None else "display"
+            print(
+                f"[{frame_count:06d}] rel={rel_ns}ns mode={mode} "
+                f"depth={'yes' if latest_depth_rgb is not None else 'no'} "
+                f"traj_pts={len(traj_x)}"
+            )
 
         target_elapsed = rel_ns / 1e9 / args.speed
         target_wall = start_wall + paused_accum_sec + target_elapsed
-        while time.time() < target_wall:
+        if do_show:
+            while time.time() < target_wall:
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
+                    print("Quit requested by user.")
+                    if writer is not None:
+                        writer.release()
+                    cv2.destroyAllWindows()
+                    return 0
+                if key == ord(" "):
+                    paused = not paused
+                if paused:
+                    if pause_start is None:
+                        pause_start = time.time()
+                    key2 = cv2.waitKey(30) & 0xFF
+                    if key2 == ord("q"):
+                        print("Quit requested by user.")
+                        if writer is not None:
+                            writer.release()
+                        cv2.destroyAllWindows()
+                        return 0
+                    if key2 == ord(" "):
+                        paused = False
+                        paused_accum_sec += time.time() - pause_start
+                        pause_start = None
+                else:
+                    if pause_start is not None:
+                        paused_accum_sec += time.time() - pause_start
+                        pause_start = None
+
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 print("Quit requested by user.")
-                cv2.destroyAllWindows()
-                return 0
+                break
             if key == ord(" "):
                 paused = not paused
-            if paused:
-                if pause_start is None:
-                    pause_start = time.time()
-                key2 = cv2.waitKey(30) & 0xFF
-                if key2 == ord("q"):
-                    print("Quit requested by user.")
-                    cv2.destroyAllWindows()
-                    return 0
-                if key2 == ord(" "):
-                    paused = False
-                    paused_accum_sec += time.time() - pause_start
-                    pause_start = None
-            else:
-                if pause_start is not None:
-                    paused_accum_sec += time.time() - pause_start
-                    pause_start = None
-
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            print("Quit requested by user.")
-            break
-        if key == ord(" "):
-            paused = not paused
 
         if args.max_frames > 0 and frame_count >= args.max_frames:
             break
 
     print(f"frames_shown: {frame_count}")
+    if writer is not None:
+        writer.release()
+        print(f"video_saved: {args.save_video}")
     cv2.destroyAllWindows()
     return 0
 

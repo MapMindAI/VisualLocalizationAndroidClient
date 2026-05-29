@@ -103,3 +103,20 @@ def draw_traj_canvas(traj_x, traj_z, w: int, h: int) -> np.ndarray:
     cv2.polylines(canvas, [pts], isClosed=False, color=(255, 180, 0), thickness=2)
     cv2.circle(canvas, tuple(pts[-1]), 4, (0, 0, 255), -1)
     return canvas
+
+
+def ensure_size_nearest(img: np.ndarray, ref_w: int, ref_h: int) -> np.ndarray:
+    if img.shape[0] == ref_h and img.shape[1] == ref_w:
+        return img
+    return resize_nearest(img, ref_w, ref_h)
+
+
+def make_triptych_panel(rgb_bgr: np.ndarray, depth_bgr: np.ndarray, traj_bgr: np.ndarray) -> np.ndarray:
+    h, w = rgb_bgr.shape[:2]
+    depth_bgr = ensure_size_nearest(depth_bgr, w, h)
+    traj_bgr = ensure_size_nearest(traj_bgr, w, h)
+    return np.hstack([rgb_bgr, depth_bgr, traj_bgr])
+
+
+def draw_header_text(img: np.ndarray, text: str) -> None:
+    cv2.putText(img, text, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)

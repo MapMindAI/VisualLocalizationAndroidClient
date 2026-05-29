@@ -164,7 +164,7 @@ def main() -> int:
     ros2_dir = os.path.join(os.path.dirname(__file__), "ros2")
     if ros2_dir not in sys.path:
         sys.path.append(ros2_dir)
-    from utils import depth_msg_to_bgr_turbo, draw_traj_canvas, resize_nearest
+    from utils import depth_msg_to_bgr_turbo, draw_header_text, draw_traj_canvas, ensure_size_nearest, make_triptych_panel
 
     last_t = time.time()
     fps = 0.0
@@ -189,8 +189,7 @@ def main() -> int:
         if pkt.depth_ts_ns:
             depth_img = depth_msg_to_bgr_turbo(pkt.depth_bytes, pkt.depth_w, pkt.depth_h, "16UC1")
         if depth_img is not None:
-            if depth_img.shape[0] != img.shape[0] or depth_img.shape[1] != img.shape[1]:
-                depth_img = resize_nearest(depth_img, img.shape[1], img.shape[0])
+            depth_img = ensure_size_nearest(depth_img, img.shape[1], img.shape[0])
             latest_depth_img = depth_img
         elif latest_depth_img is not None:
             depth_img = latest_depth_img
@@ -202,7 +201,8 @@ def main() -> int:
         traj = draw_traj_canvas(traj_x, traj_z, img.shape[1], img.shape[0])
         draw_overlay(img, pkt, fps)
         cv2.putText(depth_img, "depth", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
-        panel = np.hstack([img, depth_img, traj])
+        panel = make_triptych_panel(img, depth_img, traj)
+        draw_header_text(panel, f"grpc stream keys: q quit")
         cv2.imshow(window_name, panel)
 
         key = cv2.waitKey(1) & 0xFF
