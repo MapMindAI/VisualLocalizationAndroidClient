@@ -14,6 +14,11 @@ struct DataSessionFrame {
   int64_t rel_ns = 0;
   vlpstream::FramePacket packet;
   cv::Mat depth_m;
+  bool has_depth_intrinsics = false;
+  float depth_fx = 0.0f;
+  float depth_fy = 0.0f;
+  float depth_cx = 0.0f;
+  float depth_cy = 0.0f;
 };
 
 class DataSessionReader {
@@ -32,4 +37,3 @@ class DataSessionReader {
 };
 
 }  // namespace mapping
-

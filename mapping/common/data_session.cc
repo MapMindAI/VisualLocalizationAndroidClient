@@ -13,6 +13,7 @@ constexpr char kFileMagic[] = "VLPREC1\n";
 constexpr uint32_t kFileVersion = 1;
 constexpr size_t kFrameHeaderSize = 64;
 constexpr char kDepthTag[] = "DPT1";
+constexpr char kDepthTagV2[] = "DPT2";
 
 }  // namespace
 
@@ -76,7 +77,52 @@ bool DataSessionReader::Next(DataSessionFrame* frame) {
     frame->rel_ns = static_cast<int64_t>(rel_ns_u64);
     frame->packet = std::move(packet_opt.value());
     frame->depth_m.release();
+    frame->has_depth_intrinsics = false;
+    frame->depth_fx = 0.0f;
+    frame->depth_fy = 0.0f;
+    frame->depth_cx = 0.0f;
+    frame->depth_cy = 0.0f;
     ExtractDepthFromPayload(payload_buffer_, &frame->depth_m);
+    // Parse optional depth intrinsics from extended trailer (DPT2).
+    if (payload_buffer_.size() >= kFrameHeaderSize + 40) {
+      const uint8_t* data = reinterpret_cast<const uint8_t*>(payload_buffer_.data());
+      size_t jpg_end = std::string::npos;
+      for (size_t i = kFrameHeaderSize + 1; i < payload_buffer_.size(); ++i) {
+        if (data[i - 1] == 0xFF && data[i] == 0xD9) {
+          jpg_end = i + 1;
+          break;
+        }
+      }
+      if (jpg_end != std::string::npos && jpg_end + 40 <= payload_buffer_.size()) {
+        size_t cursor = jpg_end;
+        if (std::memcmp(data + cursor, kDepthTagV2, 4) == 0) {
+          cursor += 4;   // tag
+          cursor += 8;   // depth rgb ts
+          const uint32_t depth_w = vlputil::ReadU32LE(data + cursor);
+          cursor += 4;
+          const uint32_t depth_h = vlputil::ReadU32LE(data + cursor);
+          cursor += 4;
+          const uint32_t depth_size = vlputil::ReadU32LE(data + cursor);
+          cursor += 4;
+          const float dfx = vlputil::ReadF32LE(data + cursor);
+          cursor += 4;
+          const float dfy = vlputil::ReadF32LE(data + cursor);
+          cursor += 4;
+          const float dcx = vlputil::ReadF32LE(data + cursor);
+          cursor += 4;
+          const float dcy = vlputil::ReadF32LE(data + cursor);
+          cursor += 4;
+          if (cursor + depth_size <= payload_buffer_.size() && depth_w > 0 && depth_h > 0 &&
+              depth_size == depth_w * depth_h * 2u && dfx > 0.0f && dfy > 0.0f) {
+            frame->has_depth_intrinsics = true;
+            frame->depth_fx = dfx;
+            frame->depth_fy = dfy;
+            frame->depth_cx = dcx;
+            frame->depth_cy = dcy;
+          }
+        }
+      }
+    }
     return true;
   }
 }
@@ -103,7 +149,9 @@ bool DataSessionReader::ExtractDepthFromPayload(const std::string& payload, cv::
 
   size_t cursor = jpg_end;
   while (cursor + 24 <= payload.size()) {
-    if (std::memcmp(data + cursor, kDepthTag, 4) != 0) {
+    const bool is_dpt1 = (std::memcmp(data + cursor, kDepthTag, 4) == 0);
+    const bool is_dpt2 = (std::memcmp(data + cursor, kDepthTagV2, 4) == 0);
+    if (!is_dpt1 && !is_dpt2) {
       break;
     }
     cursor += 4;
@@ -114,6 +162,12 @@ bool DataSessionReader::ExtractDepthFromPayload(const std::string& payload, cv::
     cursor += 4;
     const uint32_t depth_size = vlputil::ReadU32LE(data + cursor);
     cursor += 4;
+    if (is_dpt2) {
+      if (cursor + 16 > payload.size()) {
+        break;
+      }
+      cursor += 16;  // depth fx, fy, cx, cy
+    }
     if (cursor + depth_size > payload.size()) {
       break;
     }

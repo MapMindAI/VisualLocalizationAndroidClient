@@ -172,10 +172,16 @@ int main(int argc, char** argv) {
         const float sy =
             (packet.height > 0) ? static_cast<float>(depth_m.rows) / static_cast<float>(packet.height)
                                 : 1.0f;
-        const float depth_fx = packet.fx * sx;
-        const float depth_fy = packet.fy * sy;
-        const float depth_cx = packet.cx * sx;
-        const float depth_cy = packet.cy * sy;
+        float depth_fx = packet.fx * sx;
+        float depth_fy = packet.fy * sy;
+        float depth_cx = packet.cx * sx;
+        float depth_cy = packet.cy * sy;
+        if (entry.has_depth_intrinsics) {
+          depth_fx = entry.depth_fx;
+          depth_fy = entry.depth_fy;
+          depth_cx = entry.depth_cx;
+          depth_cy = entry.depth_cy;
+        }
         const bool ok = voxblox_processor->Integrate(depth_m, packet.pose, depth_fx, depth_fy,
                                                      depth_cx, depth_cy);
         if (ok) {

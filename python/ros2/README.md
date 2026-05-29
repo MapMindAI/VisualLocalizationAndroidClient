@@ -77,3 +77,27 @@ python3 python/ros2/ros2_live_viewer.py \
   --depth-topic /camera/camera/depth/image_rect_raw \
   --vio-topic /camera/camera/vio_20hz
 ```
+
+## Convert ROS2 bag to VLPREC data format
+
+Convert rosbag color/depth/pose into `.rec` (VLPREC1 + VLP2 payload + DPT1 trailer).
+No image/depth rotation is applied.
+
+```bash
+python3 python/ros2/ros2_bag_to_vlpdata.py \
+  --bag data/${SESSION}/rosbag \
+  --output data/${SESSION}/rosbag_to_vlp.rec
+```
+
+Notes:
+- Updated trailer format is `DPT2` (backward-compatible reader supports `DPT1` and `DPT2`).
+- VLP2 header intrinsics store RGB intrinsics.
+- `DPT2` trailer stores depth intrinsics (`depth_fx/depth_fy/depth_cx/depth_cy`).
+- Depth intrinsics source:
+  1. `/camera/camera/depth/camera_info` when present
+  2. derived by resizing RGB intrinsics when depth intrinsics are missing
+  3. fallback defaults:
+  - `fx=313.94085693359375`
+  - `fy=313.94085693359375`
+  - `cx=269.742431640625`
+  - `cy=316.34063720703125`
