@@ -57,7 +57,7 @@ http://127.0.0.1:8088/
 Print frame metadata:
 
 ```bash
-python3 python/vlprec_reader.py --input data/files/2026-05-22_15-42-37/vlp_stream.rec  --display
+python3 python/vlprec_reader.py --input data/extreme_movement/2026-05-29_11-19-06/vlp_stream.rec  --display
 ```
 
 Export frame bodies and metadata CSV:
