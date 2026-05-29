@@ -109,7 +109,7 @@ def main() -> int:
 
             if rgb is not None:
                 if depth.shape[0] != rgb.shape[0] or depth.shape[1] != rgb.shape[1]:
-                    depth_show = _resize_nearest(depth, rgb.shape[1], rgb.shape[0])
+                    depth_show = resize_nearest(depth, rgb.shape[1], rgb.shape[0])
                 else:
                     depth_show = depth
                 traj = draw_traj_canvas(traj_x, traj_z, rgb.shape[1], rgb.shape[0])

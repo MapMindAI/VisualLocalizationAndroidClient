@@ -37,10 +37,10 @@ example rec: data/extreme_movement/2026-05-29_11-19-06/vlp_stream.rec
 
 ## Visualize ROS bag like vlprec_reader
 
-Display 3 panes in matplotlib: RGB, depth, and `vio_20hz` trajectory.
+Display 3 panes in OpenCV: RGB, depth, and `vio_20hz` trajectory.
 
 ```bash
-python3 python/looper_compare/rosbag_viewer.py \
+python3 python/ros2/ros2_bag_viewer.py \
   --bag data/extreme_movement/rosbag
 ```
 
@@ -54,13 +54,13 @@ Useful options:
 Subscribe in real time and show 3 panes: RGB, depth, `vio_20hz` trajectory.
 
 ```bash
-python3 python/looper_compare/ros2_live_viewer.py
+python3 python/ros2/ros2_live_viewer.py
 ```
 
 Optional topic overrides:
 
 ```bash
-python3 python/looper_compare/ros2_live_viewer.py \
+python3 python/ros2/ros2_live_viewer.py \
   --color-topic /camera/camera/color/image_rect_raw/compressed \
   --depth-topic /camera/camera/depth/image_rect_raw \
   --vio-topic /camera/camera/vio_20hz

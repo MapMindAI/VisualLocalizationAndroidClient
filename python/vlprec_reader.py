@@ -3,6 +3,7 @@ import argparse
 import csv
 import os
 import struct
+import sys
 import time
 from dataclasses import dataclass
 from typing import Iterator, Optional
@@ -276,26 +277,6 @@ def _decode_jpeg(record: FrameRecord):
         return None
 
 
-def _depth_preview(record: FrameRecord):
-    try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
-
-        if record.depth_w <= 0 or record.depth_h <= 0:
-            return None
-        expected = record.depth_w * record.depth_h * 2
-        if len(record.depth_bytes) < expected:
-            return None
-        d16 = np.frombuffer(record.depth_bytes[:expected], dtype=np.uint16).reshape(
-            (record.depth_h, record.depth_w)
-        )
-        p99 = float(np.percentile(d16, 99))
-        depth_u8 = cv2.convertScaleAbs(d16, alpha=255.0 / max(1.0, p99))
-        return cv2.applyColorMap(depth_u8, cv2.COLORMAP_TURBO)
-    except Exception:
-        return None
-
-
 def _draw_overlay(frame_bgr, rec: FrameRecord):
     import cv2  # type: ignore
 
@@ -321,24 +302,6 @@ def _draw_overlay(frame_bgr, rec: FrameRecord):
         )
         y += 24
     return frame_bgr
-
-
-def _update_traj_plot(ax, xs, ys, zs):
-    ax.cla()
-    ax.plot(xs, ys, zs, color="tab:blue", linewidth=2.0)
-    ax.scatter([xs[-1]], [ys[-1]], [zs[-1]], color="tab:red", s=24)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
-    ax.set_title("Camera Trajectory")
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    z_min, z_max = min(zs), max(zs)
-    span = max(x_max - x_min, y_max - y_min, z_max - z_min, 1e-3)
-    pad = 0.1 * span
-    ax.set_xlim(x_min - pad, x_max + pad)
-    ax.set_ylim(y_min - pad, y_max + pad)
-    ax.set_zlim(z_min - pad, z_max + pad)
 
 
 def main() -> int:
@@ -396,64 +359,40 @@ def main() -> int:
         )
 
     do_display = args.display
-    paused = False
-    prev_rel_ns = None
     playback_start_wall = None
     playback_start_rel_ns = None
     paused_accum_sec = 0.0
-    pause_started_wall = None
+    pause_start = None
     cv2 = None
-    plt_mod = None
-    fig = None
-    image_ax = None
-    image_artist = None
-    depth_ax = None
-    depth_artist = None
-    traj_ax = None
+    resize_nearest = None
+    depth_msg_to_bgr_turbo = None
+    draw_traj_canvas = None
     traj_x = []
-    traj_y = []
     traj_z = []
-    stop_requested = False
+    paused = False
+    window_name = "VLPREC Viewer"
     if do_display:
         try:
             import cv2 as _cv2  # type: ignore
 
             cv2 = _cv2
-            import matplotlib.pyplot as _plt  # type: ignore
+            ros2_dir = os.path.join(os.path.dirname(__file__), "ros2")
+            if ros2_dir not in sys.path:
+                sys.path.append(ros2_dir)
+            from utils import draw_traj_canvas as _draw_traj_canvas  # type: ignore
+            from utils import depth_msg_to_bgr_turbo as _depth_msg_to_bgr_turbo  # type: ignore
+            from utils import resize_nearest as _resize_nearest  # type: ignore
 
-            plt_mod = _plt
-            fig = plt_mod.figure("VLPREC Viewer + Trajectory", figsize=(16, 6))
-            gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1])
-            image_ax = fig.add_subplot(gs[0, 0])
-            depth_ax = fig.add_subplot(gs[0, 1])
-            traj_ax = fig.add_subplot(gs[0, 2], projection="3d")
-            traj_ax.view_init(elev=-75-180, azim=-20, roll=70)
-
-            image_ax.set_title("RGB")
-            image_ax.axis("off")
-            depth_ax.set_title("Depth")
-            depth_ax.axis("off")
-            plt_mod.ion()
-            control = {"paused": False, "quit": False}
-
-            def _on_key(event):
-                if event.key == "q":
-                    control["quit"] = True
-                elif event.key == " ":
-                    control["paused"] = not control["paused"]
-
-            fig.canvas.mpl_connect("key_press_event", _on_key)
-            fig._vlp_control = control  # type: ignore[attr-defined]
-            plt_mod.show(block=False)
+            draw_traj_canvas = _draw_traj_canvas
+            depth_msg_to_bgr_turbo = _depth_msg_to_bgr_turbo
+            resize_nearest = _resize_nearest
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         except Exception as e:
             print(f"Display disabled: failed to import/open display deps ({e})")
             do_display = False
 
     try:
         for rec in iter_vlprec(args.input):
-            if stop_requested:
-                print("Quit requested by user.")
-                return 0
             frame_count += 1
             if not rec.magic_ok:
                 bad_magic += 1
@@ -507,75 +446,75 @@ def main() -> int:
                     ]
                 )
 
-            if do_display and cv2 is not None and plt_mod is not None and image_ax is not None and traj_ax is not None and jpeg_ok:
+            if do_display and cv2 is not None and resize_nearest is not None and depth_msg_to_bgr_turbo is not None and draw_traj_canvas is not None and jpeg_ok:
                 frame_bgr = _decode_jpeg(rec)
                 if frame_bgr is not None:
                     frame_bgr = _draw_overlay(frame_bgr, rec)
-                    depth_bgr = _depth_preview(rec)
-                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                    if image_artist is None:
-                        image_artist = image_ax.imshow(frame_rgb)
+                    if rec.depth_w > 0 and rec.depth_h > 0 and rec.depth_bytes:
+                        depth_bgr = depth_msg_to_bgr_turbo(rec.depth_bytes, rec.depth_w, rec.depth_h, "16UC1")
                     else:
-                        image_artist.set_data(frame_rgb)
-                    image_ax.set_title("RGB (press space: pause, q: quit)")
-                    if depth_ax is not None:
-                        h, w = frame_bgr.shape[:2]
-                        if depth_bgr is not None:
-                            depth_bgr = cv2.resize(depth_bgr, (w, h), interpolation=cv2.INTER_NEAREST)
-                        else:
-                            depth_bgr = cv2.cvtColor(
-                                cv2.resize(
-                                    cv2.convertScaleAbs(
-                                        cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), alpha=0.0
-                                    ),
-                                    (w, h),
-                                    interpolation=cv2.INTER_NEAREST,
-                                ),
-                                cv2.COLOR_GRAY2BGR,
-                            )
-                        depth_rgb = cv2.cvtColor(depth_bgr, cv2.COLOR_BGR2RGB)
-                        if depth_artist is None:
-                            depth_artist = depth_ax.imshow(depth_rgb)
-                        else:
-                            depth_artist.set_data(depth_rgb)
+                        depth_bgr = None
+                    h, w = frame_bgr.shape[:2]
+                    if depth_bgr is None:
+                        depth_bgr = cv2.cvtColor(
+                            cv2.resize(
+                                cv2.convertScaleAbs(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), alpha=0.0),
+                                (w, h),
+                                interpolation=cv2.INTER_NEAREST,
+                            ),
+                            cv2.COLOR_GRAY2BGR,
+                        )
+                    elif depth_bgr.shape[0] != h or depth_bgr.shape[1] != w:
+                        depth_bgr = resize_nearest(depth_bgr, w, h)
+                    traj = draw_traj_canvas(traj_x, traj_z, w, h)
+                    panel = cv2.hconcat([frame_bgr, depth_bgr, traj])
+                    cv2.imshow(window_name, panel)
 
-                prev_rel_ns = rec.rel_ns
-            if do_display and plt_mod is not None and traj_ax is not None:
+            if do_display and cv2 is not None:
                 traj_x.append(rec.tx)
-                traj_y.append(rec.ty)
                 traj_z.append(-rec.tz)
-                _update_traj_plot(traj_ax, traj_x, traj_y, traj_z)
-                plt_mod.pause(0.001)
                 if playback_start_wall is None:
                     playback_start_wall = time.time()
                     playback_start_rel_ns = rec.rel_ns
                 target_elapsed_sec = (rec.rel_ns - playback_start_rel_ns) / 1e9 / args.speed
                 target_wall = playback_start_wall + paused_accum_sec + target_elapsed_sec
                 while time.time() < target_wall:
-                    ctl = getattr(fig, "_vlp_control", {"paused": False, "quit": False}) if fig is not None else {"paused": False, "quit": False}
-                    if ctl["quit"]:
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord("q"):
                         print("Quit requested by user.")
                         return 0
-                    if ctl["paused"]:
-                        if pause_started_wall is None:
-                            pause_started_wall = time.time()
-                        plt_mod.pause(0.03)
+                    if key == ord(" "):
+                        paused = not paused
+                    if paused:
+                        if pause_start is None:
+                            pause_start = time.time()
+                        key2 = cv2.waitKey(30) & 0xFF
+                        if key2 == ord("q"):
+                            print("Quit requested by user.")
+                            return 0
+                        if key2 == ord(" "):
+                            paused = False
+                            paused_accum_sec += time.time() - pause_start
+                            pause_start = None
                     else:
-                        if pause_started_wall is not None:
-                            paused_accum_sec += time.time() - pause_started_wall
-                            pause_started_wall = None
-                        remaining = target_wall - time.time()
-                        plt_mod.pause(min(0.01, max(0.001, remaining)))
+                        if pause_start is not None:
+                            paused_accum_sec += time.time() - pause_start
+                            pause_start = None
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
+                    print("Quit requested by user.")
+                    return 0
+                if key == ord(" "):
+                    paused = not paused
 
             if args.max_frames > 0 and frame_count >= args.max_frames:
                 break
     finally:
         if csv_file is not None:
             csv_file.close()
-        if do_display and plt_mod is not None:
+        if do_display and cv2 is not None:
             try:
-                plt_mod.ioff()
-                plt_mod.close("all")
+                cv2.destroyAllWindows()
             except Exception:
                 pass
 
