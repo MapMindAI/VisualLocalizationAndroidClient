@@ -398,6 +398,10 @@ def main() -> int:
     do_display = args.display
     paused = False
     prev_rel_ns = None
+    playback_start_wall = None
+    playback_start_rel_ns = None
+    paused_accum_sec = 0.0
+    pause_started_wall = None
     cv2 = None
     plt_mod = None
     fig = None
@@ -535,25 +539,6 @@ def main() -> int:
                         else:
                             depth_artist.set_data(depth_rgb)
 
-                    if prev_rel_ns is not None:
-                        dt_sec = max(0.0, (rec.rel_ns - prev_rel_ns) / 1e9 / args.speed)
-                        if dt_sec > 0:
-                            end_t = time.time() + dt_sec
-                            while time.time() < end_t:
-                                ctl = getattr(fig, "_vlp_control", {"paused": False, "quit": False}) if fig is not None else {"paused": False, "quit": False}
-                                if ctl["quit"]:
-                                    stop_requested = True
-                                    break
-                                while ctl["paused"]:
-                                    plt_mod.pause(0.03)
-                                    ctl = getattr(fig, "_vlp_control", ctl) if fig is not None else ctl
-                                    if ctl["quit"]:
-                                        stop_requested = True
-                                        break
-                                plt_mod.pause(0.001)
-                            if stop_requested:
-                                print("Quit requested by user.")
-                                return 0
                 prev_rel_ns = rec.rel_ns
             if do_display and plt_mod is not None and traj_ax is not None:
                 traj_x.append(rec.tx)
@@ -561,6 +546,26 @@ def main() -> int:
                 traj_z.append(-rec.tz)
                 _update_traj_plot(traj_ax, traj_x, traj_y, traj_z)
                 plt_mod.pause(0.001)
+                if playback_start_wall is None:
+                    playback_start_wall = time.time()
+                    playback_start_rel_ns = rec.rel_ns
+                target_elapsed_sec = (rec.rel_ns - playback_start_rel_ns) / 1e9 / args.speed
+                target_wall = playback_start_wall + paused_accum_sec + target_elapsed_sec
+                while time.time() < target_wall:
+                    ctl = getattr(fig, "_vlp_control", {"paused": False, "quit": False}) if fig is not None else {"paused": False, "quit": False}
+                    if ctl["quit"]:
+                        print("Quit requested by user.")
+                        return 0
+                    if ctl["paused"]:
+                        if pause_started_wall is None:
+                            pause_started_wall = time.time()
+                        plt_mod.pause(0.03)
+                    else:
+                        if pause_started_wall is not None:
+                            paused_accum_sec += time.time() - pause_started_wall
+                            pause_started_wall = None
+                        remaining = target_wall - time.time()
+                        plt_mod.pause(min(0.01, max(0.001, remaining)))
 
             if args.max_frames > 0 and frame_count >= args.max_frames:
                 break
