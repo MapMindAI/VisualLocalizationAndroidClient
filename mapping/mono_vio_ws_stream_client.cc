@@ -29,6 +29,7 @@ DEFINE_double(replay_speed, 1.0, "Replay speed multiplier.");
 
 DEFINE_bool(enable_voxblox, true, "Enable Voxblox TSDF/ESDF integration from recorder depth.");
 DEFINE_double(voxblox_voxel_size_m, 0.2, "Voxblox voxel size in meters.");
+DEFINE_double(max_depth_m, 6.0, "Maximum depth (meters) used for depth panel visualization.");
 DEFINE_int32(esdf_update_every_n, 10,
              "Update/publish ESDF points every N successful Voxblox integrations.");
 DEFINE_double(esdf2d_height_m, 0.0, "World-space Y height (meters) for the 2D ESDF plane.");
@@ -50,7 +51,8 @@ cv::Mat BuildDepthPanel(const cv::Mat& depth_m, const cv::Size& target_size,
   } else {
     double max_val = 0.0;
     cv::minMaxLoc(depth_m, nullptr, &max_val);
-    const double vis_max = std::max(0.5, std::min(6.0, max_val));
+    const double vis_cap = std::max(0.1, FLAGS_max_depth_m);
+    const double vis_max = std::max(0.5, std::min(vis_cap, max_val));
     cv::Mat depth_8u;
     depth_m.convertTo(depth_8u, CV_8U, 255.0 / vis_max);
     cv::Mat color;
@@ -83,6 +85,10 @@ int main(int argc, char** argv) {
     LOG(ERROR) << "--esdf_update_every_n must be > 0";
     return 1;
   }
+  if (FLAGS_max_depth_m <= 0.0) {
+    LOG(ERROR) << "--max_depth_m must be > 0";
+    return 1;
+  }
 
   mapping::DataSessionReader session(FLAGS_data_session);
   if (!session.Open()) {
@@ -92,6 +98,7 @@ int main(int argc, char** argv) {
   std::unique_ptr<mapping::VoxbloxProcessor> voxblox_processor;
   if (FLAGS_enable_voxblox) {
     mapping::VoxbloxProcessor::Config cfg(FLAGS_voxblox_voxel_size_m);
+    cfg.max_depth_m = FLAGS_max_depth_m;
     voxblox_processor = std::make_unique<mapping::VoxbloxProcessor>(cfg);
     LOG(INFO) << "[Voxblox] enabled.";
   }
