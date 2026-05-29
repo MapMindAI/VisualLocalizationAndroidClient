@@ -76,28 +76,22 @@ def draw_traj_canvas(traj_x, traj_z, w: int, h: int) -> np.ndarray:
 
     xs = np.asarray(traj_x, dtype=np.float32)
     zs = np.asarray(traj_z, dtype=np.float32)
-    x_min, x_max = float(xs.min()), float(xs.max())
-    z_min, z_max = float(zs.min()), float(zs.max())
-    span = max(x_max - x_min, z_max - z_min, 1e-3)
-    pad = 0.1 * span
-    x_min -= pad
-    x_max += pad
-    z_min -= pad
-    z_max += pad
-
     view_w = w - 40
     view_h = h - 60
     ox, oy = 20, 40
+    cx = 0.5 * (float(xs.min()) + float(xs.max()))
+    cz = 0.5 * (float(zs.min()) + float(zs.max()))
+    rx = max(1e-6, 0.5 * (float(xs.max()) - float(xs.min())))
+    rz = max(1e-6, 0.5 * (float(zs.max()) - float(zs.min())))
+    # Isotropic scaling: same ratio on x/z to avoid directional stretch.
+    r = max(rx, rz)
+    r *= 1.1  # pad 10%
 
-    px = (xs - x_min) / max(1e-6, (x_max - x_min))
-    pz = (zs - z_min) / max(1e-6, (z_max - z_min))
-    pts = np.stack(
-        [
-            (ox + px * view_w).astype(np.int32),
-            (oy + (1.0 - pz) * view_h).astype(np.int32),
-        ],
-        axis=1,
-    )
+    sx = (xs - cx) / r
+    sz = (zs - cz) / r
+    px = ox + (sx * 0.5 + 0.5) * view_w
+    py = oy + (0.5 - sz * 0.5) * view_h
+    pts = np.stack([px.astype(np.int32), py.astype(np.int32)], axis=1)
 
     cv2.rectangle(canvas, (ox, oy), (ox + view_w, oy + view_h), (70, 70, 70), 1)
     cv2.polylines(canvas, [pts], isClosed=False, color=(255, 180, 0), thickness=2)
