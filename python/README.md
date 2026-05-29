@@ -42,3 +42,14 @@ Useful options:
 
 - `--speed 2.0` for 2x playback
 - `--max-frames 300` to stop early
+- `--save-video out/vlprec_triptych.mp4` save triptych video instead of live display
+- `--video-fps 30` set output video FPS when saving
+
+Save video example:
+
+```bash
+python3 python/vlprec_reader.py \
+  --input data/extreme_movement/2026-05-29_11-19-06/vlp_stream.rec \
+  --save-video data/extreme_movement/vlprec_triptych.mp4 \
+  --video-fps 30
+```

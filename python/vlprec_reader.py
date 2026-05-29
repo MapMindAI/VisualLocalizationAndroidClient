@@ -170,6 +170,39 @@ def _extract_depth_bytes_vlp2(payload: bytes, jpeg_offset: int, depth_size: int)
     return trailer[24 : 24 + depth_size]
 
 
+def _normalize_quat(x: float, y: float, z: float, w: float):
+    n2 = x * x + y * y + z * z + w * w
+    if n2 <= 1e-20:
+        return 0.0, 0.0, 0.0, 1.0
+    inv = n2 ** -0.5
+    return x * inv, y * inv, z * inv, w * inv
+
+
+def _quat_mul(ax: float, ay: float, az: float, aw: float, bx: float, by: float, bz: float, bw: float):
+    # (x,y,z,w) convention
+    x = aw * bx + ax * bw + ay * bz - az * by
+    y = aw * by - ax * bz + ay * bw + az * bx
+    z = aw * bz + ax * by - ay * bx + az * bw
+    w = aw * bw - ax * bx - ay * by - az * bz
+    return x, y, z, w
+
+
+def _apply_camera_to_opengl_pose_transform(
+    qx: float, qy: float, qz: float, qw: float, tx: float, ty: float, tz: float
+):
+    # Matches:
+    # Sophus::SE3f pose(q, t);
+    # const Sophus::SE3f kTransformCameraToOpenGLDevice(
+    #     Eigen::Quaternionf(0.0f, 1.0f, 0.0f, 0.0f), Eigen::Vector3f::Zero());
+    # pose = pose * kTransformCameraToOpenGLDevice;
+    qx, qy, qz, qw = _normalize_quat(qx, qy, qz, qw)
+    # Right multiply by fixed quaternion (x=1, y=0, z=0, w=0).
+    qx, qy, qz, qw = _quat_mul(qx, qy, qz, qw, 1.0, 0.0, 0.0, 0.0)
+    qx, qy, qz, qw = _normalize_quat(qx, qy, qz, qw)
+    # Translation remains unchanged because rhs translation is zero.
+    return qx, qy, qz, qw, tx, ty, tz
+
+
 def iter_vlprec(path: str) -> Iterator[FrameRecord]:
     with open(path, "rb") as f:
         file_header = _read_exact(f, FILE_HEADER_STRUCT.size)
@@ -226,6 +259,9 @@ def iter_vlprec(path: str) -> Iterator[FrameRecord]:
                     depth_bytes = payload[depth_off : depth_off + depth_size]
             elif magic_kind == "vlp2":
                 depth_bytes = _extract_depth_bytes_vlp2(payload, jpeg_offset, depth_size)
+            # qx, qy, qz, qw, tx, ty, tz = _apply_camera_to_opengl_pose_transform(
+            #     qx, qy, qz, qw, tx, ty, tz
+            # )
             yield FrameRecord(
                 index=idx,
                 rel_ns=rel_ns,
@@ -312,10 +348,14 @@ def main() -> int:
     parser.add_argument("--csv", default="", help="Optional CSV output path for frame metadata")
     parser.add_argument("--display", action="store_true", help="Display frames in realtime with pose/intrinsics overlay")
     parser.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier for --display")
+    parser.add_argument("--save-video", default="", help="Optional output video path; when set, render panels to video instead of cvshow")
+    parser.add_argument("--video-fps", type=float, default=30.0, help="Output video FPS for --save-video")
     parser.add_argument("--log-every", type=int, default=60, help="Print progress every N frames (0 to disable periodic logs)")
     args = parser.parse_args()
     if args.speed <= 0:
         raise ValueError("--speed must be > 0")
+    if args.video_fps <= 0:
+        raise ValueError("--video-fps must be > 0")
 
     frame_count = 0
     bad_magic = 0
@@ -359,11 +399,12 @@ def main() -> int:
             ]
         )
 
-    do_display = args.display
+    do_display = args.display or bool(args.save_video)
     playback_start_wall = None
     playback_start_rel_ns = None
     paused_accum_sec = 0.0
     pause_start = None
+    writer_video = None
     cv2 = None
     ensure_size_nearest = None
     draw_header_text = None
@@ -374,6 +415,7 @@ def main() -> int:
     traj_z = []
     paused = False
     window_name = "VLPREC Viewer"
+    do_show = args.display and not bool(args.save_video)
     if do_display:
         try:
             import cv2 as _cv2  # type: ignore
@@ -393,7 +435,8 @@ def main() -> int:
             depth_msg_to_bgr_turbo = _depth_msg_to_bgr_turbo
             ensure_size_nearest = _ensure_size_nearest
             make_triptych_panel = _make_triptych_panel
-            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+            if do_show:
+                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         except Exception as e:
             print(f"Display disabled: failed to import/open display deps ({e})")
             do_display = False
@@ -482,7 +525,18 @@ def main() -> int:
                     traj = draw_traj_canvas(traj_x, traj_z, w, h)
                     panel = make_triptych_panel(frame_bgr, depth_bgr, traj)
                     draw_header_text(panel, f"vlprec keys: space pause, q quit")
-                    cv2.imshow(window_name, panel)
+                    if writer_video is None and args.save_video:
+                        os.makedirs(os.path.dirname(args.save_video) or ".", exist_ok=True)
+                        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                        writer_video = cv2.VideoWriter(
+                            args.save_video, fourcc, float(args.video_fps), (panel.shape[1], panel.shape[0])
+                        )
+                        if not writer_video.isOpened():
+                            raise RuntimeError(f"Failed to open video writer: {args.save_video}")
+                    if writer_video is not None:
+                        writer_video.write(panel)
+                    elif do_show:
+                        cv2.imshow(window_name, panel)
 
             if do_display and cv2 is not None:
                 traj_x.append(rec.tx)
@@ -492,40 +546,44 @@ def main() -> int:
                     playback_start_rel_ns = rec.rel_ns
                 target_elapsed_sec = (rec.rel_ns - playback_start_rel_ns) / 1e9 / args.speed
                 target_wall = playback_start_wall + paused_accum_sec + target_elapsed_sec
-                while time.time() < target_wall:
+                if do_show:
+                    while time.time() < target_wall:
+                        key = cv2.waitKey(1) & 0xFF
+                        if key == ord("q"):
+                            print("Quit requested by user.")
+                            return 0
+                        if key == ord(" "):
+                            paused = not paused
+                        if paused:
+                            if pause_start is None:
+                                pause_start = time.time()
+                            key2 = cv2.waitKey(30) & 0xFF
+                            if key2 == ord("q"):
+                                print("Quit requested by user.")
+                                return 0
+                            if key2 == ord(" "):
+                                paused = False
+                                paused_accum_sec += time.time() - pause_start
+                                pause_start = None
+                        else:
+                            if pause_start is not None:
+                                paused_accum_sec += time.time() - pause_start
+                                pause_start = None
                     key = cv2.waitKey(1) & 0xFF
                     if key == ord("q"):
                         print("Quit requested by user.")
                         return 0
                     if key == ord(" "):
                         paused = not paused
-                    if paused:
-                        if pause_start is None:
-                            pause_start = time.time()
-                        key2 = cv2.waitKey(30) & 0xFF
-                        if key2 == ord("q"):
-                            print("Quit requested by user.")
-                            return 0
-                        if key2 == ord(" "):
-                            paused = False
-                            paused_accum_sec += time.time() - pause_start
-                            pause_start = None
-                    else:
-                        if pause_start is not None:
-                            paused_accum_sec += time.time() - pause_start
-                            pause_start = None
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
-                    print("Quit requested by user.")
-                    return 0
-                if key == ord(" "):
-                    paused = not paused
 
             if args.max_frames > 0 and frame_count >= args.max_frames:
                 break
     finally:
         if csv_file is not None:
             csv_file.close()
+        if writer_video is not None:
+            writer_video.release()
+            print(f"video_saved: {args.save_video}")
         if do_display and cv2 is not None:
             try:
                 cv2.destroyAllWindows()
