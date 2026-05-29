@@ -111,7 +111,7 @@ def main() -> int:
             latest_pose = PoseState(stamp_ns=_stamp_to_ns(msg.header.stamp), x=float(p.x), y=float(p.y), z=float(p.z))
             traj_x.append(latest_pose.x)
             traj_y.append(latest_pose.y)
-            traj_z.append(-latest_pose.z)
+            traj_z.append(latest_pose.z)
             continue
 
         if topic != args.color_topic:

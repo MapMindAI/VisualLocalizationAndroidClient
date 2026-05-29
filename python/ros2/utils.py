@@ -75,7 +75,7 @@ def draw_traj_canvas(traj_x, traj_z, w: int, h: int) -> np.ndarray:
         return canvas
 
     xs = np.asarray(traj_x, dtype=np.float32)
-    zs = -np.asarray(traj_z, dtype=np.float32)
+    zs = np.asarray(traj_z, dtype=np.float32)
     x_min, x_max = float(xs.min()), float(xs.max())
     z_min, z_max = float(zs.min()), float(zs.max())
     span = max(x_max - x_min, z_max - z_min, 1e-3)

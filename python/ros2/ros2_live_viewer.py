@@ -77,7 +77,7 @@ class LiveViewerNode(Node):
             self.latest_pose = pose
             self.traj_x.append(pose.x)
             self.traj_y.append(pose.y)
-            self.traj_z.append(-pose.z)
+            self.traj_z.append(pose.z)
 
 
 def main() -> int:
