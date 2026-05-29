@@ -312,6 +312,7 @@ def main() -> int:
     parser.add_argument("--csv", default="", help="Optional CSV output path for frame metadata")
     parser.add_argument("--display", action="store_true", help="Display frames in realtime with pose/intrinsics overlay")
     parser.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier for --display")
+    parser.add_argument("--log-every", type=int, default=60, help="Print progress every N frames (0 to disable periodic logs)")
     args = parser.parse_args()
     if args.speed <= 0:
         raise ValueError("--speed must be > 0")
@@ -407,13 +408,19 @@ def main() -> int:
             if args.export_dir:
                 export_path = export_body(rec, args.export_dir)
 
-            print(
-                f"[{rec.index:06d}] rel={rec.rel_ns}ns ts={rec.timestamp_ns} "
-                f"{rec.width}x{rec.height} body={len(rec.body)} "
-                f"depth={rec.depth_w}x{rec.depth_h}/{rec.depth_size} "
-                f"magic={'ok' if rec.magic_ok else hex(rec.magic)}({rec.magic_kind}) "
-                f"jpeg={'yes' if jpeg_ok else 'no'}"
-            )
+            should_log = False
+            if args.log_every > 0 and (frame_count == 1 or frame_count % args.log_every == 0):
+                should_log = True
+            if not rec.magic_ok or not jpeg_ok:
+                should_log = True
+            if should_log:
+                print(
+                    f"[{rec.index:06d}] rel={rec.rel_ns}ns ts={rec.timestamp_ns} "
+                    f"{rec.width}x{rec.height} body={len(rec.body)} "
+                    f"depth={rec.depth_w}x{rec.depth_h}/{rec.depth_size} "
+                    f"magic={'ok' if rec.magic_ok else hex(rec.magic)}({rec.magic_kind}) "
+                    f"jpeg={'yes' if jpeg_ok else 'no'}"
+                )
 
             if writer is not None:
                 writer.writerow(

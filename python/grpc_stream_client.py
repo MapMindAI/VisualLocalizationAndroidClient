@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import struct
+import sys
 import time
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -113,18 +115,6 @@ def decode_jpeg(jpeg: bytes):
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
 
-def depth_preview(depth_bytes: bytes, w: int, h: int):
-    if not depth_bytes or w <= 0 or h <= 0:
-        return None
-    expected = w * h * 2
-    if len(depth_bytes) < expected:
-        return None
-    d16 = np.frombuffer(depth_bytes[:expected], dtype=np.uint16).reshape((h, w))
-    # Depth payload stores two bytes per pixel (low/high); visualize normalized intensity.
-    d8 = cv2.convertScaleAbs(d16, alpha=255.0 / max(1.0, float(np.percentile(d16, 99))))
-    return cv2.applyColorMap(d8, cv2.COLORMAP_TURBO)
-
-
 def draw_overlay(img, pkt: FramePacket, fps: float):
     lines = [
         f"ts={pkt.timestamp_ns} fps={fps:.2f}",
@@ -169,12 +159,20 @@ def main() -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=50051)
     ap.add_argument("--timeout", type=float, default=3600.0)
-    ap.add_argument("--show-depth", action="store_true", help="show depth preview window when depth trailer exists")
     args = ap.parse_args()
+
+    ros2_dir = os.path.join(os.path.dirname(__file__), "ros2")
+    if ros2_dir not in sys.path:
+        sys.path.append(ros2_dir)
+    from utils import depth_msg_to_bgr_turbo, draw_traj_canvas, resize_nearest
 
     last_t = time.time()
     fps = 0.0
     latest_depth_img = None
+    traj_x = []
+    traj_z = []
+    window_name = "vlp_stream_rgb_depth_traj"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     for payload in stream_frames(args.host, args.port, args.timeout):
         pkt = parse_packet(payload)
@@ -189,19 +187,23 @@ def main() -> int:
 
         depth_img = None
         if pkt.depth_ts_ns:
-            depth_img = depth_preview(pkt.depth_bytes, pkt.depth_w, pkt.depth_h)
+            depth_img = depth_msg_to_bgr_turbo(pkt.depth_bytes, pkt.depth_w, pkt.depth_h, "16UC1")
         if depth_img is not None:
-            depth_img = cv2.resize(depth_img, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+            if depth_img.shape[0] != img.shape[0] or depth_img.shape[1] != img.shape[1]:
+                depth_img = resize_nearest(depth_img, img.shape[1], img.shape[0])
             latest_depth_img = depth_img
         elif latest_depth_img is not None:
             depth_img = latest_depth_img
         else:
             depth_img = np.zeros_like(img)
 
+        traj_x.append(pkt.tx)
+        traj_z.append(-pkt.tz)
+        traj = draw_traj_canvas(traj_x, traj_z, img.shape[1], img.shape[0])
         draw_overlay(img, pkt, fps)
         cv2.putText(depth_img, "depth", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
-        side_by_side = np.hstack([img, depth_img])
-        cv2.imshow("vlp_stream_rgb_depth", side_by_side)
+        panel = np.hstack([img, depth_img, traj])
+        cv2.imshow(window_name, panel)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):

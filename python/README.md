@@ -16,7 +16,7 @@ adb forward tcp:50051 tcp:50051
 Run client:
 
 ```bash
-python3 python/ws_stream_client.py --host 127.0.0.1 --port 50051 --show-depth
+python3 python/grpc_stream_client.py --host 127.0.0.1 --port 50051
 ```
 
 https://github.com/user-attachments/assets/4f305b9f-1916-4a6f-b0e7-45c40ce3d9f1
