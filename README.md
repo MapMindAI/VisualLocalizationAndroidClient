@@ -90,6 +90,8 @@ Recorded sessions use `VLPREC1` container with per-frame payloads containing:
 
 Depth is decoded as metric `CV_32F` and integrated without resizing; intrinsics are scaled to depth resolution before integration.
 
+<img width="1243" height="398" alt="VLPREC_Viewer_+_Trajectory" src="https://github.com/user-attachments/assets/0d2b87d7-b0e6-429b-b4a9-98a313deb666" />
+
 ## Python utilities
 
 Inspect and play recorded datasets:

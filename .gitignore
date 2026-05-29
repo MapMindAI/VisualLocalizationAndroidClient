@@ -10,3 +10,4 @@ data
 python/models
 bazel-*
 libs/mapmind_vlp_api
+rosbags
