@@ -327,9 +327,9 @@ def _update_traj_plot(ax, xs, ys, zs):
     ax.cla()
     ax.plot(xs, ys, zs, color="tab:blue", linewidth=2.0)
     ax.scatter([xs[-1]], [ys[-1]], [zs[-1]], color="tab:red", s=24)
-    ax.set_xlabel("x (right)")
-    ax.set_ylabel("y (up)")
-    ax.set_zlabel("z (back)")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
     ax.set_title("Camera Trajectory")
     x_min, x_max = min(xs), max(xs)
     y_min, y_max = min(ys), max(ys)
@@ -403,6 +403,8 @@ def main() -> int:
     fig = None
     image_ax = None
     image_artist = None
+    depth_ax = None
+    depth_artist = None
     traj_ax = None
     traj_x = []
     traj_y = []
@@ -417,11 +419,16 @@ def main() -> int:
 
             plt_mod = _plt
             fig = plt_mod.figure("VLPREC Viewer + Trajectory", figsize=(16, 6))
-            gs = fig.add_gridspec(1, 2, width_ratios=[2, 1])
+            gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1])
             image_ax = fig.add_subplot(gs[0, 0])
-            traj_ax = fig.add_subplot(gs[0, 1], projection="3d")
-            image_ax.set_title("RGB + Depth")
+            depth_ax = fig.add_subplot(gs[0, 1])
+            traj_ax = fig.add_subplot(gs[0, 2], projection="3d")
+            traj_ax.view_init(elev=-75-180, azim=-20, roll=70)
+
+            image_ax.set_title("RGB")
             image_ax.axis("off")
+            depth_ax.set_title("Depth")
+            depth_ax.axis("off")
             plt_mod.ion()
             control = {"paused": False, "quit": False}
 
@@ -501,16 +508,32 @@ def main() -> int:
                 if frame_bgr is not None:
                     frame_bgr = _draw_overlay(frame_bgr, rec)
                     depth_bgr = _depth_preview(rec)
-                    if depth_bgr is not None:
-                        h, w = frame_bgr.shape[:2]
-                        depth_bgr = cv2.resize(depth_bgr, (w, h), interpolation=cv2.INTER_NEAREST)
-                        frame_bgr = cv2.hconcat([frame_bgr, depth_bgr])
                     frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
                     if image_artist is None:
                         image_artist = image_ax.imshow(frame_rgb)
                     else:
                         image_artist.set_data(frame_rgb)
-                    image_ax.set_title("RGB + Depth (press space: pause, q: quit)")
+                    image_ax.set_title("RGB (press space: pause, q: quit)")
+                    if depth_ax is not None:
+                        h, w = frame_bgr.shape[:2]
+                        if depth_bgr is not None:
+                            depth_bgr = cv2.resize(depth_bgr, (w, h), interpolation=cv2.INTER_NEAREST)
+                        else:
+                            depth_bgr = cv2.cvtColor(
+                                cv2.resize(
+                                    cv2.convertScaleAbs(
+                                        cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), alpha=0.0
+                                    ),
+                                    (w, h),
+                                    interpolation=cv2.INTER_NEAREST,
+                                ),
+                                cv2.COLOR_GRAY2BGR,
+                            )
+                        depth_rgb = cv2.cvtColor(depth_bgr, cv2.COLOR_BGR2RGB)
+                        if depth_artist is None:
+                            depth_artist = depth_ax.imshow(depth_rgb)
+                        else:
+                            depth_artist.set_data(depth_rgb)
 
                     if prev_rel_ns is not None:
                         dt_sec = max(0.0, (rec.rel_ns - prev_rel_ns) / 1e9 / args.speed)
