@@ -56,8 +56,8 @@ Save video example:
 
 ```bash
 python3 python/ros2/ros2_bag_viewer.py \
-  --bag data/extreme_movement/rosbag \
-  --save-video data/extreme_movement/ros2_bag_triptych.mp4 \
+  --bag data/${SESSION}/rosbag \
+  --save-video data/${SESSION}/ros2_bag_triptych.mp4 \
   --video-fps 30
 ```
 

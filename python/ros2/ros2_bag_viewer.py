@@ -38,7 +38,7 @@ def main() -> int:
     ap.add_argument("--bag", required=True, help="Bag directory path (contains metadata.yaml)")
     ap.add_argument("--color-topic", default="/camera/camera/color/image_rect_raw/compressed")
     ap.add_argument("--depth-topic", default="/camera/camera/depth/image_rect_raw")
-    ap.add_argument("--vio-topic", default="/camera/camera/vio_20hz")
+    ap.add_argument("--vio-topic", default="/camera/camera/vio_100hz")
     ap.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier")
     ap.add_argument("--max-frames", type=int, default=0)
     ap.add_argument("--save-video", default="", help="Optional output video path; when set, frames are written instead of shown")

@@ -48,8 +48,9 @@ Useful options:
 Save video example:
 
 ```bash
+SESSION=extreme_movement
 python3 python/vlprec_reader.py \
-  --input data/extreme_movement/2026-05-29_11-19-06/vlp_stream.rec \
-  --save-video data/extreme_movement/vlprec_triptych.mp4 \
+  --input data/${SESSION}/vlp_stream.rec \
+  --save-video data/${SESSION}/vlprec_triptych.mp4 \
   --video-fps 30
 ```
