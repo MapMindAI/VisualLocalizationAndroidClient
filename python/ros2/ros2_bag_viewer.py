@@ -14,8 +14,6 @@ from utils import (
     depth_msg_to_bgr_turbo,
     draw_header_text,
     draw_traj_canvas,
-    ensure_size_nearest,
-    make_triptych_panel,
     rot90_ccw,
 )
 
@@ -68,7 +66,8 @@ def main() -> int:
 
     msg_types = {name: get_message(typename) for name, typename in type_map.items()}
 
-    latest_depth_rgb = np.zeros((480, 640, 3), dtype=np.uint8)
+    latest_depth_rgb: Optional[np.ndarray] = None
+    depth_target_w: Optional[int] = None
     latest_pose = None
     traj_x = []
     traj_y = []
@@ -120,16 +119,34 @@ def main() -> int:
         rgb = decode_compressed_image_rgb(bytes(msg.data))
         if rgb is None:
             continue
+        if latest_depth_rgb is None:
+            continue
         rgb = rot90_ccw(rgb)
 
         rel_ns = int(t_ns) - start_msg_time_ns
         frame_count += 1
-        depth_show = rot90_ccw(latest_depth_rgb)
-        depth_show = ensure_size_nearest(depth_show, rgb.shape[1], rgb.shape[0])
+        # Keep raw depth aspect ratio: only match RGB height.
+        rgb_h = int(rgb.shape[0])
+        if latest_depth_rgb is not None:
+            depth_show = rot90_ccw(latest_depth_rgb)
+            depth_h, depth_w = depth_show.shape[:2]
+            if depth_h > 0:
+                computed_depth_w = max(1, int(round(depth_w * (rgb_h / float(depth_h)))))
+            else:
+                computed_depth_w = int(rgb.shape[1])
+        else:
+            computed_depth_w = int(rgb.shape[1])
+            depth_show = np.zeros((rgb_h, computed_depth_w, 3), dtype=np.uint8)
+
+        # VideoWriter requires a fixed frame size across all frames.
+        if depth_target_w is None:
+            depth_target_w = computed_depth_w
+        if depth_show.shape[0] != rgb_h or depth_show.shape[1] != depth_target_w:
+            depth_show = cv2.resize(depth_show, (depth_target_w, rgb_h), interpolation=cv2.INTER_NEAREST)
 
         traj = draw_traj_canvas(traj_x, traj_y, rgb.shape[1], rgb.shape[0])
         rgb_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        panel = make_triptych_panel(rgb_bgr, depth_show, traj)
+        panel = np.hstack([rgb_bgr, depth_show, traj])
         if latest_pose is not None:
             txt = f"idx={frame_count-1} rel={rel_ns}ns vio=({latest_pose.x:.3f},{latest_pose.y:.3f},{latest_pose.z:.3f}) keys: space pause, q quit"
         else:
