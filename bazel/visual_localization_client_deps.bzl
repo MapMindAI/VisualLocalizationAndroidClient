@@ -21,13 +21,6 @@ def visual_localization_client_deps():
 
     maybe(
         http_archive,
-        name = "com_github_grpc_grpc",
-        strip_prefix = "grpc-1.62.2",
-        urls = ["https://github.com/grpc/grpc/archive/refs/tags/v1.62.2.tar.gz"],
-    )
-
-    maybe(
-        http_archive,
         name = "rules_android_ndk",
         patch_args = [
             "-p1",
@@ -89,4 +82,18 @@ def visual_localization_client_deps():
         build_file = "@mm_visual_localization_client//third_party:voxblox.BUILD",
         commit = "c8066b04075d2fee509de295346b1c0b788c4f38",
         remote = "https://github.com/ethz-asl/voxblox",
+    )
+
+    maybe(
+        native.new_local_repository,
+        name = "pangolin",
+        build_file = "@dm_core_map//third_party:pangolin.BUILD",
+        path = "/usr/local/",
+    )
+
+    maybe(
+        native.new_local_repository,
+        name = "ros_humble",
+        build_file = "@mm_visual_localization_client//third_party:ros_humble.BUILD",
+        path = "/opt/ros/humble",
     )

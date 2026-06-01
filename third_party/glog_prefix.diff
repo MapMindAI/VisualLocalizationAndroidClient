@@ -1,0 +1,45 @@
+diff --git a/src/logging.cc b/src/logging.cc
+index 4028ccc..dad49f9 100644
+--- a/src/logging.cc
++++ b/src/logging.cc
+@@ -824,7 +824,7 @@ inline void LogDestination::MaybeLogToStderr(LogSeverity severity,
+     };
+     __android_log_write(android_log_levels[severity],
+                         glog_internal_namespace_::ProgramInvocationShortName(),
+-                        message + prefix_len);
++                        message);
+ #else
+     (void) prefix_len;
+ #endif
+diff --git a/bazel/glog.bzl b/bazel/glog.bzl
+index 809afc1..f1e4db2 100644
+--- a/bazel/glog.bzl
++++ b/bazel/glog.bzl
+@@ -126,7 +126,7 @@ def glog_library(namespace = "google", with_gflags = 0, **kwargs):
+         "src/windows/port.h",
+     ]
+
+-    gflags_deps = ["@com_github_gflags_gflags//:gflags"] if with_gflags else []
++    gflags_deps = ["@com_github_gflags_gflags//:gflags_nothreads"] if with_gflags else []
+
+     native.cc_library(
+         name = "glog",
+@
+diff --git a/bazel/glog.bzl b/bazel/glog.bzl
+index 4208d9e..13fcd5a 100644
+--- a/bazel/glog.bzl
++++ b/bazel/glog.bzl
+@@ -177,6 +177,13 @@ def glog_library(namespace = "google", with_gflags = 1, **kwargs):
+                 "GLOG_DEPRECATED=__attribute__((deprecated))",
+                 "GLOG_EXPORT=__attribute__((visibility(\\\"default\\\")))",
+             ],
++        }) + select({
++            "@bazel_platforms//platforms:any_linux": [
++                # For stacktrace.
++                "HAVE_EXECINFO_H",
++            ],
++            "@bazel_platforms//platforms:any_android": [],
++            "//conditions:default": [],
+         }),
+         copts =
+             select({

@@ -1,14 +1,7 @@
 workspace(name = "mm_visual_localization_client")
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-# Override old gtest from transitive deps to a Bazel-6-compatible release.
-http_archive(
-    name = "com_google_googletest",
-    sha256 = "8ad598c73ad796e0d8280b082cebd82a630d73e73cd3c70057938a6501bba5d7",
-    urls = ["https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz"],
-    strip_prefix = "googletest-1.14.0",
-)
+load("//bazel:google_deps.bzl", "google_deps")
+google_deps()
 
 load("//bazel:visual_localization_client_deps.bzl", "visual_localization_client_deps")
 visual_localization_client_deps()

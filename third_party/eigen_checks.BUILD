@@ -7,11 +7,8 @@ cc_library(
         "include/eigen-checks/internal/*.h",
     ]),
     includes = ["include/"],
-    linkopts = [
-        "-lgflags",
-        "-lglog",
-    ],
     deps = [
         "@eigen",
+        "@com_github_glog//:glog",
     ],
 )

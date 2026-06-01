@@ -43,3 +43,23 @@ config_setting(
         ":platform": "android_armv7a",
     },
 )
+
+selects.config_setting_group(
+    name = "any_linux",
+    match_any = [
+        ":linux",
+        ":linux_x86_64",
+        ":linux_arm64",
+        "@platforms//os:linux",
+    ],
+)
+
+selects.config_setting_group(
+    # default to ndk25 with no suffix
+    name = "any_android",
+    match_any = [
+        ":android_arm64",
+        ":android_armv7a",
+        "@platforms//os:android",
+    ],
+)
