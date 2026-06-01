@@ -1,3 +1,4 @@
+#include "mapping/common/ros2_utils.h"
 #include "mapping/voxblox/voxblox_processor.h"
 
 #include <gflags/gflags.h>
@@ -8,12 +9,8 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/msg/point_field.hpp>
-
-#include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstring>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -23,11 +20,12 @@ DEFINE_string(node_name, "voxblox_ros_node", "ROS2 node name.");
 DEFINE_string(topic_depth, "/vlp/depth", "Depth image topic.");
 DEFINE_string(topic_pose, "/vlp/pose", "VIO pose topic.");
 DEFINE_string(topic_esdf, "/vlp/esdf_cloud", "ESDF cloud topic.");
+DEFINE_string(topic_depth_cloud, "/vlp/depth_cloud", "Depth cloud topic in world frame.");
 DEFINE_string(frame_id, "map", "Output cloud frame id.");
 DEFINE_double(esdf_publish_hz, 2.0, "ESDF publish frequency.");
-DEFINE_double(voxel_size_m, 0.2, "Voxblox voxel size.");
-DEFINE_double(max_depth_m, 8.0, "Max depth for integration.");
-DEFINE_int32(depth_stride, 4, "Depth sampling stride.");
+DEFINE_double(voxel_size_m, 0.3, "Voxblox voxel size.");
+DEFINE_double(max_depth_m, 16.0, "Max depth for integration.");
+DEFINE_int32(depth_stride, 8, "Depth sampling stride.");
 DEFINE_double(depth_fx, 313.94085693359375, "Depth intrinsics fx.");
 DEFINE_double(depth_fy, 313.94085693359375, "Depth intrinsics fy.");
 DEFINE_double(depth_cx, 269.742431640625, "Depth intrinsics cx.");
@@ -36,53 +34,6 @@ DEFINE_double(depth_cy, 316.34063720703125, "Depth intrinsics cy.");
 namespace {
 
 using Pose = Sophus::SE3f;
-
-sensor_msgs::msg::PointCloud2 MakeXYZRGBCloudMsg(
-    const std::vector<std::array<float, 6>>& points, const std::string& frame_id,
-    const rclcpp::Time& stamp) {
-  sensor_msgs::msg::PointCloud2 msg;
-  msg.header.frame_id = frame_id;
-  msg.header.stamp = stamp;
-  msg.height = 1;
-  msg.width = static_cast<uint32_t>(points.size());
-  msg.is_bigendian = false;
-  msg.is_dense = false;
-  msg.point_step = 16;
-  msg.row_step = msg.point_step * msg.width;
-  msg.fields.resize(4);
-  msg.fields[0].name = "x";
-  msg.fields[0].offset = 0;
-  msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
-  msg.fields[0].count = 1;
-  msg.fields[1].name = "y";
-  msg.fields[1].offset = 4;
-  msg.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
-  msg.fields[1].count = 1;
-  msg.fields[2].name = "z";
-  msg.fields[2].offset = 8;
-  msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
-  msg.fields[2].count = 1;
-  msg.fields[3].name = "rgb";
-  msg.fields[3].offset = 12;
-  msg.fields[3].datatype = sensor_msgs::msg::PointField::FLOAT32;
-  msg.fields[3].count = 1;
-  msg.data.resize(msg.row_step);
-  for (size_t i = 0; i < points.size(); ++i) {
-    uint8_t* p = msg.data.data() + i * msg.point_step;
-    std::memcpy(p + 0, &points[i][0], sizeof(float));
-    std::memcpy(p + 4, &points[i][1], sizeof(float));
-    std::memcpy(p + 8, &points[i][2], sizeof(float));
-    const uint8_t r = static_cast<uint8_t>(std::clamp(points[i][3], 0.0f, 255.0f));
-    const uint8_t g = static_cast<uint8_t>(std::clamp(points[i][4], 0.0f, 255.0f));
-    const uint8_t b = static_cast<uint8_t>(std::clamp(points[i][5], 0.0f, 255.0f));
-    const uint32_t rgb_u32 =
-        (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(b);
-    float rgb_f32 = 0.0f;
-    std::memcpy(&rgb_f32, &rgb_u32, sizeof(float));
-    std::memcpy(p + 12, &rgb_f32, sizeof(float));
-  }
-  return msg;
-}
 
 class VoxbloxRosNode final : public rclcpp::Node {
  public:
@@ -94,6 +45,8 @@ class VoxbloxRosNode final : public rclcpp::Node {
     sub_depth_ = create_subscription<sensor_msgs::msg::Image>(
         FLAGS_topic_depth, 20, std::bind(&VoxbloxRosNode::OnDepth, this, std::placeholders::_1));
     pub_esdf_ = create_publisher<sensor_msgs::msg::PointCloud2>(FLAGS_topic_esdf, 5);
+    pub_depth_cloud_ =
+        create_publisher<sensor_msgs::msg::PointCloud2>(FLAGS_topic_depth_cloud, 10);
     timer_ = create_wall_timer(
         std::chrono::duration<double>(1.0 / std::max(1e-3, FLAGS_esdf_publish_hz)),
         std::bind(&VoxbloxRosNode::OnTimer, this));
@@ -132,6 +85,14 @@ class VoxbloxRosNode final : public rclcpp::Node {
     const auto points = BuildDepthPointsCamera(depth_m);
     if (!points.empty()) {
       voxblox_->IntegratePointCloud(points, pose);
+      std::vector<Eigen::Vector3f> cloud_w;
+      cloud_w.reserve(points.size());
+      const Eigen::Matrix3f R = pose.rotationMatrix();
+      const Eigen::Vector3f t = pose.translation();
+      for (const auto& p : points) {
+        cloud_w.push_back(R * p + t);
+      }
+      pub_depth_cloud_->publish(mapping::ros2::MakeXYZCloudMsg(cloud_w, FLAGS_frame_id, now()));
     }
   }
 
@@ -143,7 +104,7 @@ class VoxbloxRosNode final : public rclcpp::Node {
     for (const auto& p : esdf) {
       cloud.push_back({p.x, p.y, p.z, p.r, p.g, p.b});
     }
-    pub_esdf_->publish(MakeXYZRGBCloudMsg(cloud, FLAGS_frame_id, now()));
+    pub_esdf_->publish(mapping::ros2::MakeXYZRGBCloudMsg(cloud, FLAGS_frame_id, now()));
   }
 
   bool DecodeDepth(const sensor_msgs::msg::Image& msg, cv::Mat* out) const {
@@ -189,6 +150,7 @@ class VoxbloxRosNode final : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_esdf_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_depth_cloud_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   std::mutex mu_;

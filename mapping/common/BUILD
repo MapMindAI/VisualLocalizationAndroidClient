@@ -48,3 +48,13 @@ cc_library(
         "@opencv//:core",
     ],
 )
+
+cc_library(
+    name = "ros2_utils",
+    srcs = ["ros2_utils.cc"],
+    hdrs = ["ros2_utils.h"],
+    deps = [
+        "@eigen//:eigen",
+        "@ros_humble//:ros_humble",
+    ],
+)

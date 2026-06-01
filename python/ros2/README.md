@@ -28,7 +28,9 @@ full topics
 ```
 
 ```
-ros2 bag record -o test_bag /camera/camera/color/image_rect_raw/compressed /camera/camera/depth/image_rect_raw /camera/camera/vio_100hz
+ros2 bag record -o test_bag \
+/camera/camera/color/image_rect_raw/compressed /camera/camera/depth/image_rect_raw /camera/camera/vio_100hz \
+/camera/camera/color/camera_info /camera/camera/infra1/camera_info /tf_static
 ```
 
 ## Compare with ARCore data

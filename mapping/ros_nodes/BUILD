@@ -4,6 +4,7 @@ cc_binary(
     name = "voxblox_ros_node",
     srcs = ["voxblox_ros_node.cc"],
     deps = [
+        "//mapping/common:ros2_utils",
         "//mapping/voxblox:voxblox_processor",
         "@opencv//:core",
         "@ros_humble//:ros_humble",
@@ -15,6 +16,7 @@ cc_binary(
     name = "pangolin_visualizer_node",
     srcs = ["pangolin_visualizer_node.cc"],
     deps = [
+        "//mapping/common:ros2_utils",
         "@opencv//:core",
         "@opencv//:imgproc",
         "@ros_humble//:ros_humble",

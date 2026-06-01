@@ -1,3 +1,5 @@
+#include "mapping/common/ros2_utils.h"
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -7,7 +9,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <deque>
 #include <mutex>
 #include <thread>
@@ -26,6 +27,7 @@ DEFINE_string(topic_rgb_compressed, "/vlp/rgb/compressed", "Compressed RGB image
 DEFINE_string(topic_depth, "/vlp/depth", "Depth image topic.");
 DEFINE_string(topic_pose, "/vlp/pose", "Pose topic.");
 DEFINE_string(topic_esdf, "/vlp/esdf_cloud", "ESDF cloud topic.");
+DEFINE_string(topic_depth_cloud, "/vlp/depth_cloud", "Depth cloud topic (world frame).");
 DEFINE_int32(window_width, 1600, "Viewer width.");
 DEFINE_int32(window_height, 900, "Viewer height.");
 DEFINE_int32(max_traj_points, 5000, "Max trajectory points.");
@@ -35,61 +37,12 @@ DEFINE_double(esdf_height_max_m, 2.0, "Height max (m) used for ESDF Jet normaliz
 
 namespace {
 
-struct ColoredPoint {
-  float x = 0.0f;
-  float y = 0.0f;
-  float z = 0.0f;
-  uint8_t r = 255;
-  uint8_t g = 255;
-  uint8_t b = 255;
-};
-
 Eigen::Vector3f JetRgb(float t) {
   t = std::max(0.0f, std::min(1.0f, t));
   const float r = std::max(0.0f, std::min(1.0f, 1.5f - std::fabs(4.0f * t - 3.0f)));
   const float g = std::max(0.0f, std::min(1.0f, 1.5f - std::fabs(4.0f * t - 2.0f)));
   const float b = std::max(0.0f, std::min(1.0f, 1.5f - std::fabs(4.0f * t - 1.0f)));
   return Eigen::Vector3f(r, g, b);
-}
-
-bool FindFieldOffset(const sensor_msgs::msg::PointCloud2& msg, const std::string& name, int* offset) {
-  for (const auto& f : msg.fields) {
-    if (f.name == name) {
-      *offset = static_cast<int>(f.offset);
-      return true;
-    }
-  }
-  return false;
-}
-
-std::vector<ColoredPoint> DecodePointCloud2(const sensor_msgs::msg::PointCloud2& msg) {
-  std::vector<ColoredPoint> out;
-  if (msg.point_step < 12 || msg.width == 0 || msg.data.empty()) return out;
-  int off_x = -1, off_y = -1, off_z = -1, off_rgb = -1;
-  if (!FindFieldOffset(msg, "x", &off_x) || !FindFieldOffset(msg, "y", &off_y) ||
-      !FindFieldOffset(msg, "z", &off_z)) {
-    return out;
-  }
-  FindFieldOffset(msg, "rgb", &off_rgb);
-  const size_t n = static_cast<size_t>(msg.width) * static_cast<size_t>(msg.height);
-  out.reserve(n);
-  for (size_t i = 0; i < n; ++i) {
-    const uint8_t* p = msg.data.data() + i * msg.point_step;
-    ColoredPoint cp;
-    std::memcpy(&cp.x, p + off_x, sizeof(float));
-    std::memcpy(&cp.y, p + off_y, sizeof(float));
-    std::memcpy(&cp.z, p + off_z, sizeof(float));
-    if (!std::isfinite(cp.x) || !std::isfinite(cp.y) || !std::isfinite(cp.z)) continue;
-    if (off_rgb >= 0 && off_rgb + 4 <= static_cast<int>(msg.point_step)) {
-      uint32_t rgb_u32 = 0;
-      std::memcpy(&rgb_u32, p + off_rgb, sizeof(uint32_t));
-      cp.r = static_cast<uint8_t>((rgb_u32 >> 16) & 0xFF);
-      cp.g = static_cast<uint8_t>((rgb_u32 >> 8) & 0xFF);
-      cp.b = static_cast<uint8_t>(rgb_u32 & 0xFF);
-    }
-    out.push_back(cp);
-  }
-  return out;
 }
 
 class PangolinVisualizerNode final : public rclcpp::Node {
@@ -104,12 +57,17 @@ class PangolinVisualizerNode final : public rclcpp::Node {
         FLAGS_topic_pose, 50, std::bind(&PangolinVisualizerNode::OnPose, this, std::placeholders::_1));
     sub_esdf_ = create_subscription<sensor_msgs::msg::PointCloud2>(
         FLAGS_topic_esdf, 5, std::bind(&PangolinVisualizerNode::OnEsdf, this, std::placeholders::_1));
+    sub_depth_cloud_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        FLAGS_topic_depth_cloud, 10,
+        std::bind(&PangolinVisualizerNode::OnDepthCloud, this, std::placeholders::_1));
   }
 
   void RunViewer() {
     pangolin::CreateWindowAndBind("Pangolin Visualizer Node", FLAGS_window_width, FLAGS_window_height);
     glEnable(GL_DEPTH_TEST);
     pangolin::CreatePanel("menu").SetBounds(0.0, 1.0, 0.0, pangolin::Attach::Pix(220));
+    pangolin::Var<bool> ui_show_depth_cloud("menu.Show DepthCloud", true, true);
+    pangolin::Var<double> ui_depth_cloud_size("menu.DepthCloud Size", 2.0, 1.0, 10.0, true);
     pangolin::Var<double> ui_esdf_size("menu.ESDF Size", 3.0, 1.0, 10.0, true);
     pangolin::Var<double> ui_traj_width("menu.Traj Width", 2.0, 1.0, 8.0, true);
     pangolin::Var<double> ui_cam_axis("menu.Cam Axis", 0.35, 0.05, 2.0, true);
@@ -132,7 +90,8 @@ class PangolinVisualizerNode final : public rclcpp::Node {
 
     while (!pangolin::ShouldQuit() && rclcpp::ok()) {
       cv::Mat rgb, depth_vis;
-      std::vector<ColoredPoint> esdf;
+      std::vector<mapping::ros2::ColoredPoint> esdf;
+      std::vector<mapping::ros2::ColoredPoint> depth_cloud;
       std::deque<Eigen::Vector3f> traj;
       Eigen::Vector3f t = Eigen::Vector3f::Zero();
       Eigen::Quaternionf q = Eigen::Quaternionf::Identity();
@@ -141,6 +100,7 @@ class PangolinVisualizerNode final : public rclcpp::Node {
         if (!latest_rgb_.empty()) rgb = latest_rgb_.clone();
         if (!latest_depth_vis_.empty()) depth_vis = latest_depth_vis_.clone();
         esdf = latest_esdf_;
+        depth_cloud = latest_depth_cloud_;
         traj = traj_;
         t = cam_t_;
         q = cam_q_;
@@ -149,6 +109,16 @@ class PangolinVisualizerNode final : public rclcpp::Node {
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       d_3d.Activate(s_cam);
       pangolin::glDrawAxis(1.0);
+      if (ui_show_depth_cloud) {
+        glPointSize(static_cast<float>(ui_depth_cloud_size.Get()));
+        glBegin(GL_POINTS);
+        for (const auto& p : depth_cloud) {
+          glColor3ub(180, 220, 255);
+          glVertex3f(p.x, p.y, p.z);
+        }
+        glEnd();
+      }
+
       glPointSize(static_cast<float>(ui_esdf_size.Get()));
       glBegin(GL_POINTS);
       for (const auto& p : esdf) {
@@ -265,20 +235,29 @@ class PangolinVisualizerNode final : public rclcpp::Node {
 
   void OnEsdf(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     if (!msg) return;
-    auto esdf = DecodePointCloud2(*msg);
+    auto esdf = mapping::ros2::DecodePointCloud2(*msg);
     std::lock_guard<std::mutex> lk(mu_);
     latest_esdf_ = std::move(esdf);
+  }
+
+  void OnDepthCloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    if (!msg) return;
+    auto pts = mapping::ros2::DecodePointCloud2(*msg);
+    std::lock_guard<std::mutex> lk(mu_);
+    latest_depth_cloud_ = std::move(pts);
   }
 
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr sub_rgb_compressed_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_esdf_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_depth_cloud_;
 
   std::mutex mu_;
   cv::Mat latest_rgb_;
   cv::Mat latest_depth_vis_;
-  std::vector<ColoredPoint> latest_esdf_;
+  std::vector<mapping::ros2::ColoredPoint> latest_esdf_;
+  std::vector<mapping::ros2::ColoredPoint> latest_depth_cloud_;
   std::deque<Eigen::Vector3f> traj_;
   Eigen::Vector3f cam_t_ = Eigen::Vector3f::Zero();
   Eigen::Quaternionf cam_q_ = Eigen::Quaternionf::Identity();
