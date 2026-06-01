@@ -7,12 +7,14 @@
 #include <Eigen/Core>
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <message_filters/subscriber.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/synchronizer.h>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <array>
 #include <cmath>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -24,26 +26,32 @@ DEFINE_string(topic_depth_cloud, "/vlp/depth_cloud", "Depth cloud topic in world
 DEFINE_string(frame_id, "map", "Output cloud frame id.");
 DEFINE_double(esdf_publish_hz, 2.0, "ESDF publish frequency.");
 DEFINE_double(voxel_size_m, 0.3, "Voxblox voxel size.");
-DEFINE_double(max_depth_m, 16.0, "Max depth for integration.");
+DEFINE_double(max_depth_m, 6.0, "Max depth for integration.");
 DEFINE_int32(depth_stride, 8, "Depth sampling stride.");
 DEFINE_double(depth_fx, 313.94085693359375, "Depth intrinsics fx.");
 DEFINE_double(depth_fy, 313.94085693359375, "Depth intrinsics fy.");
 DEFINE_double(depth_cx, 269.742431640625, "Depth intrinsics cx.");
 DEFINE_double(depth_cy, 316.34063720703125, "Depth intrinsics cy.");
+DEFINE_int32(sync_queue_size, 50, "ApproximateTime sync queue size for pose+depth.");
 
 namespace {
 
 using Pose = Sophus::SE3f;
+using ApproxPolicy = message_filters::sync_policies::ApproximateTime<
+    geometry_msgs::msg::PoseStamped, sensor_msgs::msg::Image>;
 
 class VoxbloxRosNode final : public rclcpp::Node {
  public:
   VoxbloxRosNode()
       : rclcpp::Node(FLAGS_node_name),
         voxblox_(std::make_unique<mapping::VoxbloxProcessor>(MakeCfg())) {
-    sub_pose_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-        FLAGS_topic_pose, 50, std::bind(&VoxbloxRosNode::OnPose, this, std::placeholders::_1));
-    sub_depth_ = create_subscription<sensor_msgs::msg::Image>(
-        FLAGS_topic_depth, 20, std::bind(&VoxbloxRosNode::OnDepth, this, std::placeholders::_1));
+    pose_sub_.subscribe(this, FLAGS_topic_pose);
+    depth_sub_.subscribe(this, FLAGS_topic_depth);
+    sync_ = std::make_shared<message_filters::Synchronizer<ApproxPolicy>>(
+        ApproxPolicy(std::max(1, FLAGS_sync_queue_size)), pose_sub_, depth_sub_);
+    sync_->registerCallback(
+        std::bind(&VoxbloxRosNode::OnSyncedPoseDepth, this, std::placeholders::_1,
+                  std::placeholders::_2));
     pub_esdf_ = create_publisher<sensor_msgs::msg::PointCloud2>(FLAGS_topic_esdf, 5);
     pub_depth_cloud_ =
         create_publisher<sensor_msgs::msg::PointCloud2>(FLAGS_topic_depth_cloud, 10);
@@ -54,33 +62,21 @@ class VoxbloxRosNode final : public rclcpp::Node {
 
  private:
   static mapping::VoxbloxProcessor::Config MakeCfg() {
-    mapping::VoxbloxProcessor::Config cfg(static_cast<float>(FLAGS_voxel_size_m));
-    cfg.max_depth_m = static_cast<float>(FLAGS_max_depth_m);
-    cfg.max_ray_length_m = static_cast<float>(FLAGS_max_depth_m);
+    mapping::VoxbloxProcessor::Config cfg(FLAGS_voxel_size_m, FLAGS_max_depth_m);
     cfg.pixel_step = std::max(1, FLAGS_depth_stride);
     return cfg;
   }
 
-  void OnPose(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
-    std::lock_guard<std::mutex> lk(mu_);
-    const auto& p = msg->pose.position;
-    const auto& q = msg->pose.orientation;
-    latest_pose_ = Pose(Eigen::Quaternionf(static_cast<float>(q.w), static_cast<float>(q.x),
-                                           static_cast<float>(q.y), static_cast<float>(q.z)),
-                        Eigen::Vector3f(static_cast<float>(p.x), static_cast<float>(p.y),
-                                        static_cast<float>(p.z)));
-    has_pose_ = true;
-  }
-
-  void OnDepth(const sensor_msgs::msg::Image::SharedPtr msg) {
-    Pose pose;
-    {
-      std::lock_guard<std::mutex> lk(mu_);
-      if (!has_pose_) return;
-      pose = latest_pose_;
-    }
+  void OnSyncedPoseDepth(const geometry_msgs::msg::PoseStamped::ConstSharedPtr& pose_msg,
+                         const sensor_msgs::msg::Image::ConstSharedPtr& depth_msg) {
+    const auto& p = pose_msg->pose.position;
+    const auto& q = pose_msg->pose.orientation;
+    const Pose pose(Eigen::Quaternionf(static_cast<float>(q.w), static_cast<float>(q.x),
+                                       static_cast<float>(q.y), static_cast<float>(q.z)),
+                    Eigen::Vector3f(static_cast<float>(p.x), static_cast<float>(p.y),
+                                    static_cast<float>(p.z)));
     cv::Mat depth_m;
-    if (!DecodeDepth(*msg, &depth_m)) return;
+    if (!DecodeDepth(*depth_msg, &depth_m)) return;
 
     const auto points = BuildDepthPointsCamera(depth_m);
     if (!points.empty()) {
@@ -92,7 +88,8 @@ class VoxbloxRosNode final : public rclcpp::Node {
       for (const auto& p : points) {
         cloud_w.push_back(R * p + t);
       }
-      pub_depth_cloud_->publish(mapping::ros2::MakeXYZCloudMsg(cloud_w, FLAGS_frame_id, now()));
+      pub_depth_cloud_->publish(mapping::ros2::MakeXYZCloudMsg(
+          cloud_w, FLAGS_frame_id, rclcpp::Time(depth_msg->header.stamp)));
     }
   }
 
@@ -147,15 +144,12 @@ class VoxbloxRosNode final : public rclcpp::Node {
   }
 
   std::unique_ptr<mapping::VoxbloxProcessor> voxblox_;
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
+  message_filters::Subscriber<geometry_msgs::msg::PoseStamped> pose_sub_;
+  message_filters::Subscriber<sensor_msgs::msg::Image> depth_sub_;
+  std::shared_ptr<message_filters::Synchronizer<ApproxPolicy>> sync_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_esdf_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_depth_cloud_;
   rclcpp::TimerBase::SharedPtr timer_;
-
-  std::mutex mu_;
-  Pose latest_pose_ = Pose();
-  bool has_pose_ = false;
 };
 
 }  // namespace

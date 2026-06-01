@@ -5,6 +5,7 @@
 #include <opencv2/core/mat.hpp>
 
 #include <Eigen/Core>
+#include <unordered_map>
 #include <memory>
 #include <vector>
 
@@ -33,9 +34,11 @@ class VoxbloxProcessor {
   };
 
   struct Config {
-    Config(float _voxel_size_m): voxel_size_m(_voxel_size_m) {
+    Config(float _voxel_size_m, float _max_depth_m): voxel_size_m(_voxel_size_m), max_depth_m(_max_depth_m) {
       truncation_distance_m = voxel_size_m * 2;
       esdf_vis_distance_m = voxel_size_m * 3;
+      max_ray_length_m = max_depth_m;
+      esdf_vis_update_radius_m = 1.2 * max_depth_m;
     }
     float voxel_size_m = 0.1f;
     int voxels_per_side = 16;
@@ -56,6 +59,7 @@ class VoxbloxProcessor {
     int viz_voxel_step = 1;
     int max_tsdf_viz_points = -1;
     int max_esdf_viz_points = -1;
+    float esdf_vis_update_radius_m = 6.0f;
   };
 
   explicit VoxbloxProcessor(const Config& config);
@@ -68,7 +72,7 @@ class VoxbloxProcessor {
                  float cy);
   bool IntegratePointCloud(const std::vector<Eigen::Vector3f>& points_c, const Pose& T_w_c);
   void GetTsdfVisualization(std::vector<VizPoint>* points) const;
-  void GetEsdfVisualization(std::vector<VizPoint>* points) const;
+  void GetEsdfVisualization(std::vector<VizPoint>* points, bool get_full = false) const;
   bool GetEsdfPlaneSlice2D(float plane_height_m, EsdfPlane2D* out, int max_cells) const;
 
   int IntegratedFrameCount() const;

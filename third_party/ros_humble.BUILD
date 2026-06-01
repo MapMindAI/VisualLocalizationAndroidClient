@@ -30,6 +30,7 @@ cc_library(
         "include/sensor_msgs",
         "include/std_msgs",
         "include/geometry_msgs",
+        "include/message_filters",
         "include/rosidl_typesupport_introspection_cpp",
         "include/tf2_msgs",
     ],

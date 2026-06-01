@@ -11,6 +11,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace mapping {
@@ -30,6 +31,21 @@ inline voxblox::Color EsdfDistanceColor(float distance_m) {
 }  // namespace
 
 struct VoxbloxProcessor::Impl {
+  struct BlockKey {
+    int x = 0;
+    int y = 0;
+    int z = 0;
+    bool operator==(const BlockKey& o) const { return x == o.x && y == o.y && z == o.z; }
+  };
+  struct BlockKeyHash {
+    size_t operator()(const BlockKey& k) const {
+      size_t h = static_cast<size_t>(k.x) * 73856093u;
+      h ^= static_cast<size_t>(k.y) * 19349663u;
+      h ^= static_cast<size_t>(k.z) * 83492791u;
+      return h;
+    }
+  };
+
   explicit Impl(const Config& cfg) : config(cfg) {
     voxblox::TsdfMap::Config tsdf_cfg;
     tsdf_cfg.tsdf_voxel_size = config.voxel_size_m;
@@ -113,6 +129,8 @@ struct VoxbloxProcessor::Impl {
       full_update = (integrated_frames % config.esdf_full_update_every_n) == 0;
     }
     UpdateEsdfMap(full_update);
+    latest_pose_t = T_w_c.translation();
+    has_latest_pose = true;
     return true;
   }
 
@@ -160,7 +178,75 @@ struct VoxbloxProcessor::Impl {
     }
   }
 
-  void GetEsdfVisualization(std::vector<VizPoint>* points) const {
+  void RefreshNearbyEsdfBlocks() const {
+    if (!esdf_map || !has_latest_pose) return;
+    const auto& layer = esdf_map->getEsdfLayer();
+    voxblox::BlockIndexList blocks;
+    layer.getAllAllocatedBlocks(&blocks);
+    if (blocks.empty()) return;
+    const float r2 = config.esdf_vis_update_radius_m * config.esdf_vis_update_radius_m;
+    // always refresh nearby blocks only.
+    for (const auto& idx : blocks) {
+      const auto block_ptr = layer.getBlockPtrByIndex(idx);
+      if (!block_ptr) continue;
+      const voxblox::Point center =
+          block_ptr->origin() + voxblox::Point::Constant(0.5f * layer.block_size());
+      const float dx = center.x() - latest_pose_t.x();
+      const float dy = center.y() - latest_pose_t.y();
+      const float dz = center.z() - latest_pose_t.z();
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      UpdateCachedBlock(idx, *block_ptr);
+    }
+  }
+
+  static BlockKey ToBlockKey(const voxblox::BlockIndex& idx) {
+    return BlockKey{idx.x(), idx.y(), idx.z()};
+  }
+
+  void UpdateCachedBlock(const voxblox::BlockIndex& idx,
+                         const voxblox::Block<voxblox::EsdfVoxel>& block) const {
+    std::vector<VizPoint> out;
+    const size_t n = block.num_voxels();
+    const int voxel_step = std::max(1, config.viz_voxel_step);
+    for (size_t i = 0; i < n; i += static_cast<size_t>(voxel_step)) {
+      const voxblox::EsdfVoxel& voxel = block.getVoxelByLinearIndex(i);
+      if (!std::isfinite(voxel.distance) || std::abs(voxel.distance) > config.esdf_vis_distance_m) {
+        continue;
+      }
+      if (!config.esdf_show_free && !voxel.observed) {
+        continue;
+      }
+      if (config.esdf_only_occupied && voxel.distance > 0.0f) {
+        continue;
+      }
+      const voxblox::Point p = block.computeCoordinatesFromLinearIndex(i);
+      const voxblox::Color c = EsdfDistanceColor(voxel.distance);
+      VizPoint vp;
+      vp.x = p.x();
+      vp.y = p.y();
+      vp.z = p.z();
+      vp.r = static_cast<float>(c.b);
+      vp.g = static_cast<float>(c.g);
+      vp.b = static_cast<float>(c.r);
+      vp.v = voxel.distance;
+      out.push_back(vp);
+    }
+    esdf_block_cache[ToBlockKey(idx)] = std::move(out);
+  }
+
+  void RefreshAllEsdfBlocks() const {
+    if (!esdf_map) return;
+    const auto& layer = esdf_map->getEsdfLayer();
+    voxblox::BlockIndexList blocks;
+    layer.getAllAllocatedBlocks(&blocks);
+    for (const auto& idx : blocks) {
+      const auto block_ptr = layer.getBlockPtrByIndex(idx);
+      if (!block_ptr) continue;
+      UpdateCachedBlock(idx, *block_ptr);
+    }
+  }
+
+  void GetEsdfVisualization(std::vector<VizPoint>* points, bool get_full) const {
     if (points == nullptr) {
       return;
     }
@@ -168,46 +254,24 @@ struct VoxbloxProcessor::Impl {
     if (!esdf_map) {
       return;
     }
-
-    const auto& layer = esdf_map->getEsdfLayer();
-    voxblox::BlockIndexList blocks;
-    layer.getAllAllocatedBlocks(&blocks);
-    const int voxel_step = std::max(1, config.viz_voxel_step);
-    if (config.max_esdf_viz_points > 0) {
-      points->reserve(static_cast<size_t>(config.max_esdf_viz_points));
+    if (get_full) {
+      RefreshAllEsdfBlocks();
+    } else {
+      RefreshNearbyEsdfBlocks();
     }
-
-    for (const voxblox::BlockIndex& block_idx : blocks) {
-      auto block_ptr = layer.getBlockPtrByIndex(block_idx);
-      if (!block_ptr) {
-        continue;
-      }
-      const size_t n = block_ptr->num_voxels();
-      for (size_t i = 0; i < n; i += static_cast<size_t>(voxel_step)) {
-        const voxblox::EsdfVoxel& voxel = block_ptr->getVoxelByLinearIndex(i);
-        if (!std::isfinite(voxel.distance) ||
-            std::abs(voxel.distance) > config.esdf_vis_distance_m) {
-          continue;
-        }
-        if (!config.esdf_show_free && !voxel.observed) {
-          continue;
-        }
-        if (config.esdf_only_occupied && voxel.distance > 0.0f) {
-          continue;
-        }
-
-        const voxblox::Point p = block_ptr->computeCoordinatesFromLinearIndex(i);
-        const voxblox::Color c = EsdfDistanceColor(voxel.distance);
-        VizPoint vp;
-        vp.x = p.x();
-        vp.y = p.y();
-        vp.z = p.z();
-        vp.r = static_cast<float>(c.b);
-        vp.g = static_cast<float>(c.g);
-        vp.b = static_cast<float>(c.r);
-        vp.v = voxel.distance;
-        points->push_back(vp);
-        if (config.max_esdf_viz_points > 0 && static_cast<int>(points->size()) >= config.max_esdf_viz_points) {
+    size_t total = 0;
+    for (const auto& kv : esdf_block_cache) {
+      total += kv.second.size();
+    }
+    if (config.max_esdf_viz_points > 0) {
+      total = std::min<size_t>(total, static_cast<size_t>(config.max_esdf_viz_points));
+    }
+    points->reserve(total);
+    for (const auto& kv : esdf_block_cache) {
+      for (const auto& p : kv.second) {
+        points->push_back(p);
+        if (config.max_esdf_viz_points > 0 &&
+            static_cast<int>(points->size()) >= config.max_esdf_viz_points) {
           return;
         }
       }
@@ -319,6 +383,9 @@ struct VoxbloxProcessor::Impl {
   std::unique_ptr<voxblox::EsdfMap> esdf_map;
   std::unique_ptr<voxblox::TsdfIntegratorBase> tsdf_integrator;
   std::unique_ptr<voxblox::EsdfIntegrator> esdf_integrator;
+  mutable std::unordered_map<BlockKey, std::vector<VizPoint>, BlockKeyHash> esdf_block_cache;
+  mutable Eigen::Vector3f latest_pose_t = Eigen::Vector3f::Zero();
+  mutable bool has_latest_pose = false;
 };
 
 VoxbloxProcessor::VoxbloxProcessor(const Config& config)
@@ -352,9 +419,9 @@ void VoxbloxProcessor::GetTsdfVisualization(std::vector<VizPoint>* points) const
   }
 }
 
-void VoxbloxProcessor::GetEsdfVisualization(std::vector<VizPoint>* points) const {
+void VoxbloxProcessor::GetEsdfVisualization(std::vector<VizPoint>* points, bool get_full) const {
   if (impl_) {
-    impl_->GetEsdfVisualization(points);
+    impl_->GetEsdfVisualization(points, get_full);
   }
 }
 
