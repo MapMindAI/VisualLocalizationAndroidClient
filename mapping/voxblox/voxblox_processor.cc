@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -77,10 +78,8 @@ struct VoxbloxProcessor::Impl {
 
     const int step = std::max(1, config.pixel_step);
     voxblox::Pointcloud points_C;
-    voxblox::Colors colors;
     points_C.reserve(static_cast<size_t>(depth_m.rows / step) *
                      static_cast<size_t>(depth_m.cols / step));
-    colors.reserve(points_C.capacity());
 
     for (int v = 0; v < depth_m.rows; v += step) {
       const float* depth_row = depth_m.ptr<float>(v);
@@ -92,21 +91,23 @@ struct VoxbloxProcessor::Impl {
         const float x = (static_cast<float>(u) - cx) * z / fx;
         const float y = (static_cast<float>(v) - cy) * z / fy;
         points_C.emplace_back(x, y, z);
-        colors.emplace_back(200, 200, 200);
       }
     }
+    return IntegratePointCloud(points_C, T_w_c);
+  }
 
+  bool IntegratePointCloud(const voxblox::Pointcloud& points_C, const Pose& T_w_c) {
     if (points_C.empty()) {
       return false;
     }
-
+    voxblox::Colors colors;
+    colors.resize(points_C.size());
+    std::fill(colors.begin(), colors.end(), voxblox::Color(200, 200, 200));
     const Eigen::Quaternionf q_w_c = T_w_c.unit_quaternion();
     const voxblox::Point t_w_c = T_w_c.translation();
     const voxblox::Transformation T_G_C(q_w_c, t_w_c);
-
     tsdf_integrator->integratePointCloud(T_G_C, points_C, colors, false);
     ++integrated_frames;
-
     bool full_update = false;
     if (config.esdf_full_update_every_n > 0) {
       full_update = (integrated_frames % config.esdf_full_update_every_n) == 0;
@@ -127,7 +128,9 @@ struct VoxbloxProcessor::Impl {
     voxblox::BlockIndexList blocks;
     layer->getAllAllocatedBlocks(&blocks);
     const int voxel_step = std::max(1, config.viz_voxel_step);
-    points->reserve(static_cast<size_t>(config.max_tsdf_viz_points));
+    if (config.max_tsdf_viz_points > 0) {
+      points->reserve(static_cast<size_t>(config.max_tsdf_viz_points));
+    }
 
     for (const voxblox::BlockIndex& block_idx : blocks) {
       auto block_ptr = layer->getBlockPtrByIndex(block_idx);
@@ -150,7 +153,7 @@ struct VoxbloxProcessor::Impl {
         vp.g = static_cast<float>(voxel.color.g);
         vp.b = static_cast<float>(voxel.color.b);
         points->push_back(vp);
-        if (static_cast<int>(points->size()) >= config.max_tsdf_viz_points) {
+        if (config.max_tsdf_viz_points > 0 && static_cast<int>(points->size()) >= config.max_tsdf_viz_points) {
           return;
         }
       }
@@ -170,7 +173,9 @@ struct VoxbloxProcessor::Impl {
     voxblox::BlockIndexList blocks;
     layer.getAllAllocatedBlocks(&blocks);
     const int voxel_step = std::max(1, config.viz_voxel_step);
-    points->reserve(static_cast<size_t>(config.max_esdf_viz_points));
+    if (config.max_esdf_viz_points > 0) {
+      points->reserve(static_cast<size_t>(config.max_esdf_viz_points));
+    }
 
     for (const voxblox::BlockIndex& block_idx : blocks) {
       auto block_ptr = layer.getBlockPtrByIndex(block_idx);
@@ -202,7 +207,7 @@ struct VoxbloxProcessor::Impl {
         vp.b = static_cast<float>(c.r);
         vp.v = voxel.distance;
         points->push_back(vp);
-        if (static_cast<int>(points->size()) >= config.max_esdf_viz_points) {
+        if (config.max_esdf_viz_points > 0 && static_cast<int>(points->size()) >= config.max_esdf_viz_points) {
           return;
         }
       }
@@ -324,6 +329,21 @@ VoxbloxProcessor::~VoxbloxProcessor() = default;
 bool VoxbloxProcessor::Integrate(const cv::Mat& depth_m, const Pose& T_w_c, float fx,
                                  float fy, float cx, float cy) {
   return impl_ && impl_->Integrate(depth_m, T_w_c, fx, fy, cx, cy);
+}
+
+bool VoxbloxProcessor::IntegratePointCloud(const std::vector<Eigen::Vector3f>& points_c,
+                                           const Pose& T_w_c) {
+  if (!impl_) {
+    return false;
+  }
+  voxblox::Pointcloud points;
+  points.resize(points_c.size());
+  static_assert(sizeof(voxblox::Point) == sizeof(Eigen::Vector3f),
+                "voxblox::Point and Eigen::Vector3f size mismatch");
+  if (!points_c.empty()) {
+    std::memcpy(points[0].data(), points_c.data(), points_c.size() * sizeof(Eigen::Vector3f));
+  }
+  return impl_->IntegratePointCloud(points, T_w_c);
 }
 
 void VoxbloxProcessor::GetTsdfVisualization(std::vector<VizPoint>* points) const {

@@ -18,7 +18,7 @@ cc_library(
     ],
     deps = [
         ":pose_types",
-        "@com_github_grpc_grpc//:grpc++",
+        "@com_github_glog//:glog",
     ],
 )
 

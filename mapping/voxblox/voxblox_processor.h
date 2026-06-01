@@ -4,6 +4,7 @@
 
 #include <opencv2/core/mat.hpp>
 
+#include <Eigen/Core>
 #include <memory>
 #include <vector>
 
@@ -53,8 +54,8 @@ class VoxbloxProcessor {
     float tsdf_min_weight = 1.0f;
     float esdf_vis_distance_m = 1.0f;
     int viz_voxel_step = 1;
-    int max_tsdf_viz_points = 12000;
-    int max_esdf_viz_points = 12000;
+    int max_tsdf_viz_points = -1;
+    int max_esdf_viz_points = -1;
   };
 
   explicit VoxbloxProcessor(const Config& config);
@@ -65,6 +66,7 @@ class VoxbloxProcessor {
 
   bool Integrate(const cv::Mat& depth_m, const Pose& T_w_c, float fx, float fy, float cx,
                  float cy);
+  bool IntegratePointCloud(const std::vector<Eigen::Vector3f>& points_c, const Pose& T_w_c);
   void GetTsdfVisualization(std::vector<VizPoint>* points) const;
   void GetEsdfVisualization(std::vector<VizPoint>* points) const;
   bool GetEsdfPlaneSlice2D(float plane_height_m, EsdfPlane2D* out, int max_cells) const;
