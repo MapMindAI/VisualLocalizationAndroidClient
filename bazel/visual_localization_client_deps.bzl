@@ -87,7 +87,7 @@ def visual_localization_client_deps():
     maybe(
         native.new_local_repository,
         name = "pangolin",
-        build_file = "@dm_core_map//third_party:pangolin.BUILD",
+        build_file = "@mm_visual_localization_client//third_party:pangolin.BUILD",
         path = "/usr/local/",
     )
 
