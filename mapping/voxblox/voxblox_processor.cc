@@ -60,7 +60,7 @@ struct VoxbloxProcessor::Impl {
 
     // allow_clear lets points beyond max_ray_length_m clear up to that distance
     tsdf_int_cfg.allow_clear = false;
-    tsdf_integrator = std::make_unique<voxblox::FastTsdfIntegrator>(
+    tsdf_integrator = std::make_unique<voxblox::MergedTsdfIntegrator>(
         tsdf_int_cfg, tsdf_map->getTsdfLayerPtr());
 
     voxblox::EsdfMap::Config esdf_cfg;
