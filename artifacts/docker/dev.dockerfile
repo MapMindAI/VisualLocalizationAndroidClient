@@ -70,6 +70,7 @@ RUN apt-get update && \
     vim \
     default-jre=2:1.11* \
     openjdk-17-jdk openjdk-17-jre \
+    libgtk-3-0 libavcodec-dev libavformat-dev libswscale-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ldconfig
