@@ -27,6 +27,7 @@ DEFINE_string(frame_id, "map", "Output cloud frame id.");
 DEFINE_double(esdf_publish_hz, 2.0, "ESDF publish frequency.");
 DEFINE_double(voxel_size_m, 0.2, "Voxblox voxel size.");
 DEFINE_double(max_depth_m, 12.0, "Max depth for integration.");
+DEFINE_double(min_depth_m, 0.2, "Max depth for integration.");
 DEFINE_int32(depth_stride, 8, "Depth sampling stride.");
 DEFINE_double(depth_fx, 313.94085693359375, "Depth intrinsics fx.");
 DEFINE_double(depth_fy, 313.94085693359375, "Depth intrinsics fy.");
@@ -129,12 +130,17 @@ class VoxbloxRosNode final : public rclcpp::Node {
     const float cx = static_cast<float>(FLAGS_depth_cx);
     const float cy = static_cast<float>(FLAGS_depth_cy);
     const float max_d = static_cast<float>(FLAGS_max_depth_m);
+    const float min_d = static_cast<float>(FLAGS_min_depth_m);
     pts.reserve(static_cast<size_t>((depth_m.rows / s + 1) * (depth_m.cols / s + 1)));
+
+    // the depth corresponding to the left eye, so the depth of the first few col might be wrong
+    // we skip from the beginning cols
+    int start_col = depth_m.cols * 0.05;
     for (int v = 0; v < depth_m.rows; v += s) {
       const float* row = depth_m.ptr<float>(v);
-      for (int u = 0; u < depth_m.cols; u += s) {
+      for (int u = start_col; u < depth_m.cols; u += s) {
         const float z = row[u];
-        if (!(z > 0.01f) || !std::isfinite(z) || z > max_d) continue;
+        if (!(z > min_d) || !std::isfinite(z) || z > max_d) continue;
         const float x = (static_cast<float>(u) - cx) * z / fx;
         const float y = (static_cast<float>(v) - cy) * z / fy;
         pts.emplace_back(x, y, z);
