@@ -23,8 +23,9 @@ Run:
 bazel build //mapping:mono_vio_ws_stream_client
 
 ./bazel-bin/mapping/mono_vio_ws_stream_client \
-  --data_session=data/files/2026-05-25_11-55-32/vlp_stream.rec \
+  --data_session=data/outdoor_large_circle/rosbag_to_vlp.rec \
   --logtostderr=1 \
+  --max_depth_m=12.0 \
   --enable_websocket=true \
   --websocket_port=9002 \
   --enable_voxblox=true

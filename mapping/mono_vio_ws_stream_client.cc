@@ -29,6 +29,7 @@ DEFINE_double(replay_speed, 1.0, "Replay speed multiplier.");
 
 DEFINE_bool(enable_voxblox, true, "Enable Voxblox TSDF/ESDF integration from recorder depth.");
 DEFINE_double(voxblox_voxel_size_m, 0.2, "Voxblox voxel size in meters.");
+DEFINE_double(max_depth_m, 6.0, "Maximum depth (meters) used for depth panel visualization.");
 DEFINE_int32(esdf_update_every_n, 10,
              "Update/publish ESDF points every N successful Voxblox integrations.");
 DEFINE_double(esdf2d_height_m, 0.0, "World-space Y height (meters) for the 2D ESDF plane.");
@@ -50,9 +51,8 @@ cv::Mat BuildDepthPanel(const cv::Mat& depth_m, const cv::Size& target_size,
   } else {
     double max_val = 0.0;
     cv::minMaxLoc(depth_m, nullptr, &max_val);
-    const double vis_max = std::max(0.5, std::min(6.0, max_val));
     cv::Mat depth_8u;
-    depth_m.convertTo(depth_8u, CV_8U, 255.0 / vis_max);
+    depth_m.convertTo(depth_8u, CV_8U, 255.0 / max_val);
     cv::Mat color;
     cv::applyColorMap(depth_8u, color, cv::COLORMAP_TURBO);
     cv::resize(color, panel, target_size, 0.0, 0.0, cv::INTER_LINEAR);
@@ -83,6 +83,10 @@ int main(int argc, char** argv) {
     LOG(ERROR) << "--esdf_update_every_n must be > 0";
     return 1;
   }
+  if (FLAGS_max_depth_m <= 0.0) {
+    LOG(ERROR) << "--max_depth_m must be > 0";
+    return 1;
+  }
 
   mapping::DataSessionReader session(FLAGS_data_session);
   if (!session.Open()) {
@@ -92,6 +96,8 @@ int main(int argc, char** argv) {
   std::unique_ptr<mapping::VoxbloxProcessor> voxblox_processor;
   if (FLAGS_enable_voxblox) {
     mapping::VoxbloxProcessor::Config cfg(FLAGS_voxblox_voxel_size_m);
+    cfg.max_depth_m = FLAGS_max_depth_m;
+    cfg.max_ray_length_m = FLAGS_max_depth_m;
     voxblox_processor = std::make_unique<mapping::VoxbloxProcessor>(cfg);
     LOG(INFO) << "[Voxblox] enabled.";
   }
@@ -165,10 +171,16 @@ int main(int argc, char** argv) {
         const float sy =
             (packet.height > 0) ? static_cast<float>(depth_m.rows) / static_cast<float>(packet.height)
                                 : 1.0f;
-        const float depth_fx = packet.fx * sx;
-        const float depth_fy = packet.fy * sy;
-        const float depth_cx = packet.cx * sx;
-        const float depth_cy = packet.cy * sy;
+        float depth_fx = packet.fx * sx;
+        float depth_fy = packet.fy * sy;
+        float depth_cx = packet.cx * sx;
+        float depth_cy = packet.cy * sy;
+        if (entry.has_depth_intrinsics) {
+          depth_fx = entry.depth_fx;
+          depth_fy = entry.depth_fy;
+          depth_cx = entry.depth_cx;
+          depth_cy = entry.depth_cy;
+        }
         const bool ok = voxblox_processor->Integrate(depth_m, packet.pose, depth_fx, depth_fy,
                                                      depth_cx, depth_cy);
         if (ok) {
@@ -204,8 +216,14 @@ int main(int argc, char** argv) {
     }
 
     cv::Mat depth_panel = BuildDepthPanel(depth_m, overlay.size(), depth_status);
+    cv::Mat display_overlay = overlay;
+    cv::Mat display_depth = depth_panel;
+    if (overlay.rows > overlay.cols) {
+      cv::rotate(overlay, display_overlay, cv::ROTATE_90_COUNTERCLOCKWISE);
+      cv::rotate(depth_panel, display_depth, cv::ROTATE_90_COUNTERCLOCKWISE);
+    }
     cv::Mat combined;
-    cv::vconcat(overlay, depth_panel, combined);
+    cv::vconcat(display_overlay, display_depth, combined);
 
     trajectory.push_back(
         {packet.pose.translation().x(), packet.pose.translation().y(), packet.pose.translation().z()});
@@ -224,6 +242,7 @@ int main(int argc, char** argv) {
         const std::string img_b64 = vlputil::Base64Encode(img_buf.data(), img_buf.size());
 
         std::ostringstream oss;
+        const auto uq = packet.pose.unit_quaternion();
         oss << "{";
         oss << "\"type\":\"update\",";
         oss << "\"frame_id\":" << frame_count << ",";
@@ -232,6 +251,8 @@ int main(int argc, char** argv) {
         oss << "\"pose\":{"
             << "\"tx\":" << packet.pose.translation().x() << ",\"ty\":"
             << packet.pose.translation().y() << ",\"tz\":" << packet.pose.translation().z()
+            << ",\"qx\":" << uq.x() << ",\"qy\":" << uq.y() << ",\"qz\":" << uq.z()
+            << ",\"qw\":" << uq.w()
             << "},";
         oss << "\"depth_status\":\"" << vlputil::JsonEscape(depth_status) << "\",";
         oss << "\"voxblox\":{"

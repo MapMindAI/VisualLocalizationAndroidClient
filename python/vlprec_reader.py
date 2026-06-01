@@ -3,6 +3,7 @@ import argparse
 import csv
 import os
 import struct
+import sys
 import time
 from dataclasses import dataclass
 from typing import Iterator, Optional
@@ -169,6 +170,39 @@ def _extract_depth_bytes_vlp2(payload: bytes, jpeg_offset: int, depth_size: int)
     return trailer[24 : 24 + depth_size]
 
 
+def _normalize_quat(x: float, y: float, z: float, w: float):
+    n2 = x * x + y * y + z * z + w * w
+    if n2 <= 1e-20:
+        return 0.0, 0.0, 0.0, 1.0
+    inv = n2 ** -0.5
+    return x * inv, y * inv, z * inv, w * inv
+
+
+def _quat_mul(ax: float, ay: float, az: float, aw: float, bx: float, by: float, bz: float, bw: float):
+    # (x,y,z,w) convention
+    x = aw * bx + ax * bw + ay * bz - az * by
+    y = aw * by - ax * bz + ay * bw + az * bx
+    z = aw * bz + ax * by - ay * bx + az * bw
+    w = aw * bw - ax * bx - ay * by - az * bz
+    return x, y, z, w
+
+
+def _apply_camera_to_opengl_pose_transform(
+    qx: float, qy: float, qz: float, qw: float, tx: float, ty: float, tz: float
+):
+    # Matches:
+    # Sophus::SE3f pose(q, t);
+    # const Sophus::SE3f kTransformCameraToOpenGLDevice(
+    #     Eigen::Quaternionf(0.0f, 1.0f, 0.0f, 0.0f), Eigen::Vector3f::Zero());
+    # pose = pose * kTransformCameraToOpenGLDevice;
+    qx, qy, qz, qw = _normalize_quat(qx, qy, qz, qw)
+    # Right multiply by fixed quaternion (x=1, y=0, z=0, w=0).
+    qx, qy, qz, qw = _quat_mul(qx, qy, qz, qw, 1.0, 0.0, 0.0, 0.0)
+    qx, qy, qz, qw = _normalize_quat(qx, qy, qz, qw)
+    # Translation remains unchanged because rhs translation is zero.
+    return qx, qy, qz, qw, tx, ty, tz
+
+
 def iter_vlprec(path: str) -> Iterator[FrameRecord]:
     with open(path, "rb") as f:
         file_header = _read_exact(f, FILE_HEADER_STRUCT.size)
@@ -225,6 +259,9 @@ def iter_vlprec(path: str) -> Iterator[FrameRecord]:
                     depth_bytes = payload[depth_off : depth_off + depth_size]
             elif magic_kind == "vlp2":
                 depth_bytes = _extract_depth_bytes_vlp2(payload, jpeg_offset, depth_size)
+            # qx, qy, qz, qw, tx, ty, tz = _apply_camera_to_opengl_pose_transform(
+            #     qx, qy, qz, qw, tx, ty, tz
+            # )
             yield FrameRecord(
                 index=idx,
                 rel_ns=rel_ns,
@@ -276,26 +313,6 @@ def _decode_jpeg(record: FrameRecord):
         return None
 
 
-def _depth_preview(record: FrameRecord):
-    try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
-
-        if record.depth_w <= 0 or record.depth_h <= 0:
-            return None
-        expected = record.depth_w * record.depth_h * 2
-        if len(record.depth_bytes) < expected:
-            return None
-        d16 = np.frombuffer(record.depth_bytes[:expected], dtype=np.uint16).reshape(
-            (record.depth_h, record.depth_w)
-        )
-        p99 = float(np.percentile(d16, 99))
-        depth_u8 = cv2.convertScaleAbs(d16, alpha=255.0 / max(1.0, p99))
-        return cv2.applyColorMap(depth_u8, cv2.COLORMAP_TURBO)
-    except Exception:
-        return None
-
-
 def _draw_overlay(frame_bgr, rec: FrameRecord):
     import cv2  # type: ignore
 
@@ -323,24 +340,6 @@ def _draw_overlay(frame_bgr, rec: FrameRecord):
     return frame_bgr
 
 
-def _update_traj_plot(ax, xs, ys, zs):
-    ax.cla()
-    ax.plot(xs, ys, zs, color="tab:blue", linewidth=2.0)
-    ax.scatter([xs[-1]], [ys[-1]], [zs[-1]], color="tab:red", s=24)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
-    ax.set_title("Camera Trajectory")
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    z_min, z_max = min(zs), max(zs)
-    span = max(x_max - x_min, y_max - y_min, z_max - z_min, 1e-3)
-    pad = 0.1 * span
-    ax.set_xlim(x_min - pad, x_max + pad)
-    ax.set_ylim(y_min - pad, y_max + pad)
-    ax.set_zlim(z_min - pad, z_max + pad)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read VLPREC1 dataset files (JPEG body).")
     parser.add_argument("--input", required=True, help="Path to .rec file")
@@ -349,9 +348,14 @@ def main() -> int:
     parser.add_argument("--csv", default="", help="Optional CSV output path for frame metadata")
     parser.add_argument("--display", action="store_true", help="Display frames in realtime with pose/intrinsics overlay")
     parser.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier for --display")
+    parser.add_argument("--save-video", default="", help="Optional output video path; when set, render panels to video instead of cvshow")
+    parser.add_argument("--video-fps", type=float, default=30.0, help="Output video FPS for --save-video")
+    parser.add_argument("--log-every", type=int, default=60, help="Print progress every N frames (0 to disable periodic logs)")
     args = parser.parse_args()
     if args.speed <= 0:
         raise ValueError("--speed must be > 0")
+    if args.video_fps <= 0:
+        raise ValueError("--video-fps must be > 0")
 
     frame_count = 0
     bad_magic = 0
@@ -395,65 +399,50 @@ def main() -> int:
             ]
         )
 
-    do_display = args.display
-    paused = False
-    prev_rel_ns = None
+    do_display = args.display or bool(args.save_video)
     playback_start_wall = None
     playback_start_rel_ns = None
     paused_accum_sec = 0.0
-    pause_started_wall = None
+    pause_start = None
+    writer_video = None
     cv2 = None
-    plt_mod = None
-    fig = None
-    image_ax = None
-    image_artist = None
-    depth_ax = None
-    depth_artist = None
-    traj_ax = None
+    ensure_size_nearest = None
+    draw_header_text = None
+    make_triptych_panel = None
+    depth_msg_to_bgr_turbo = None
+    draw_traj_canvas = None
     traj_x = []
-    traj_y = []
     traj_z = []
-    stop_requested = False
+    paused = False
+    window_name = "VLPREC Viewer"
+    do_show = args.display and not bool(args.save_video)
     if do_display:
         try:
             import cv2 as _cv2  # type: ignore
 
             cv2 = _cv2
-            import matplotlib.pyplot as _plt  # type: ignore
+            ros2_dir = os.path.join(os.path.dirname(__file__), "ros2")
+            if ros2_dir not in sys.path:
+                sys.path.append(ros2_dir)
+            from utils import draw_header_text as _draw_header_text  # type: ignore
+            from utils import draw_traj_canvas as _draw_traj_canvas  # type: ignore
+            from utils import depth_msg_to_bgr_turbo as _depth_msg_to_bgr_turbo  # type: ignore
+            from utils import ensure_size_nearest as _ensure_size_nearest  # type: ignore
+            from utils import make_triptych_panel as _make_triptych_panel  # type: ignore
 
-            plt_mod = _plt
-            fig = plt_mod.figure("VLPREC Viewer + Trajectory", figsize=(16, 6))
-            gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1])
-            image_ax = fig.add_subplot(gs[0, 0])
-            depth_ax = fig.add_subplot(gs[0, 1])
-            traj_ax = fig.add_subplot(gs[0, 2], projection="3d")
-            traj_ax.view_init(elev=-75-180, azim=-20, roll=70)
-
-            image_ax.set_title("RGB")
-            image_ax.axis("off")
-            depth_ax.set_title("Depth")
-            depth_ax.axis("off")
-            plt_mod.ion()
-            control = {"paused": False, "quit": False}
-
-            def _on_key(event):
-                if event.key == "q":
-                    control["quit"] = True
-                elif event.key == " ":
-                    control["paused"] = not control["paused"]
-
-            fig.canvas.mpl_connect("key_press_event", _on_key)
-            fig._vlp_control = control  # type: ignore[attr-defined]
-            plt_mod.show(block=False)
+            draw_header_text = _draw_header_text
+            draw_traj_canvas = _draw_traj_canvas
+            depth_msg_to_bgr_turbo = _depth_msg_to_bgr_turbo
+            ensure_size_nearest = _ensure_size_nearest
+            make_triptych_panel = _make_triptych_panel
+            if do_show:
+                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         except Exception as e:
             print(f"Display disabled: failed to import/open display deps ({e})")
             do_display = False
 
     try:
         for rec in iter_vlprec(args.input):
-            if stop_requested:
-                print("Quit requested by user.")
-                return 0
             frame_count += 1
             if not rec.magic_ok:
                 bad_magic += 1
@@ -468,13 +457,19 @@ def main() -> int:
             if args.export_dir:
                 export_path = export_body(rec, args.export_dir)
 
-            print(
-                f"[{rec.index:06d}] rel={rec.rel_ns}ns ts={rec.timestamp_ns} "
-                f"{rec.width}x{rec.height} body={len(rec.body)} "
-                f"depth={rec.depth_w}x{rec.depth_h}/{rec.depth_size} "
-                f"magic={'ok' if rec.magic_ok else hex(rec.magic)}({rec.magic_kind}) "
-                f"jpeg={'yes' if jpeg_ok else 'no'}"
-            )
+            should_log = False
+            if args.log_every > 0 and (frame_count == 1 or frame_count % args.log_every == 0):
+                should_log = True
+            if not rec.magic_ok or not jpeg_ok:
+                should_log = True
+            if should_log:
+                print(
+                    f"[{rec.index:06d}] rel={rec.rel_ns}ns ts={rec.timestamp_ns} "
+                    f"{rec.width}x{rec.height} body={len(rec.body)} "
+                    f"depth={rec.depth_w}x{rec.depth_h}/{rec.depth_size} "
+                    f"magic={'ok' if rec.magic_ok else hex(rec.magic)}({rec.magic_kind}) "
+                    f"jpeg={'yes' if jpeg_ok else 'no'}"
+                )
 
             if writer is not None:
                 writer.writerow(
@@ -507,75 +502,91 @@ def main() -> int:
                     ]
                 )
 
-            if do_display and cv2 is not None and plt_mod is not None and image_ax is not None and traj_ax is not None and jpeg_ok:
+            if do_display and cv2 is not None and ensure_size_nearest is not None and depth_msg_to_bgr_turbo is not None and draw_traj_canvas is not None and make_triptych_panel is not None and draw_header_text is not None and jpeg_ok:
                 frame_bgr = _decode_jpeg(rec)
                 if frame_bgr is not None:
                     frame_bgr = _draw_overlay(frame_bgr, rec)
-                    depth_bgr = _depth_preview(rec)
-                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                    if image_artist is None:
-                        image_artist = image_ax.imshow(frame_rgb)
+                    if rec.depth_w > 0 and rec.depth_h > 0 and rec.depth_bytes:
+                        depth_bgr = depth_msg_to_bgr_turbo(rec.depth_bytes, rec.depth_w, rec.depth_h, "16UC1")
                     else:
-                        image_artist.set_data(frame_rgb)
-                    image_ax.set_title("RGB (press space: pause, q: quit)")
-                    if depth_ax is not None:
-                        h, w = frame_bgr.shape[:2]
-                        if depth_bgr is not None:
-                            depth_bgr = cv2.resize(depth_bgr, (w, h), interpolation=cv2.INTER_NEAREST)
-                        else:
-                            depth_bgr = cv2.cvtColor(
-                                cv2.resize(
-                                    cv2.convertScaleAbs(
-                                        cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), alpha=0.0
-                                    ),
-                                    (w, h),
-                                    interpolation=cv2.INTER_NEAREST,
-                                ),
-                                cv2.COLOR_GRAY2BGR,
-                            )
-                        depth_rgb = cv2.cvtColor(depth_bgr, cv2.COLOR_BGR2RGB)
-                        if depth_artist is None:
-                            depth_artist = depth_ax.imshow(depth_rgb)
-                        else:
-                            depth_artist.set_data(depth_rgb)
+                        depth_bgr = None
+                    h, w = frame_bgr.shape[:2]
+                    if depth_bgr is None:
+                        depth_bgr = cv2.cvtColor(
+                            cv2.resize(
+                                cv2.convertScaleAbs(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), alpha=0.0),
+                                (w, h),
+                                interpolation=cv2.INTER_NEAREST,
+                            ),
+                            cv2.COLOR_GRAY2BGR,
+                        )
+                    else:
+                        depth_bgr = ensure_size_nearest(depth_bgr, w, h)
+                    traj = draw_traj_canvas(traj_x, traj_z, w, h)
+                    panel = make_triptych_panel(frame_bgr, depth_bgr, traj)
+                    draw_header_text(panel, f"vlprec keys: space pause, q quit")
+                    if writer_video is None and args.save_video:
+                        os.makedirs(os.path.dirname(args.save_video) or ".", exist_ok=True)
+                        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                        writer_video = cv2.VideoWriter(
+                            args.save_video, fourcc, float(args.video_fps), (panel.shape[1], panel.shape[0])
+                        )
+                        if not writer_video.isOpened():
+                            raise RuntimeError(f"Failed to open video writer: {args.save_video}")
+                    if writer_video is not None:
+                        writer_video.write(panel)
+                    elif do_show:
+                        cv2.imshow(window_name, panel)
 
-                prev_rel_ns = rec.rel_ns
-            if do_display and plt_mod is not None and traj_ax is not None:
+            if do_display and cv2 is not None:
                 traj_x.append(rec.tx)
-                traj_y.append(rec.ty)
-                traj_z.append(-rec.tz)
-                _update_traj_plot(traj_ax, traj_x, traj_y, traj_z)
-                plt_mod.pause(0.001)
+                traj_z.append(rec.ty)
                 if playback_start_wall is None:
                     playback_start_wall = time.time()
                     playback_start_rel_ns = rec.rel_ns
                 target_elapsed_sec = (rec.rel_ns - playback_start_rel_ns) / 1e9 / args.speed
                 target_wall = playback_start_wall + paused_accum_sec + target_elapsed_sec
-                while time.time() < target_wall:
-                    ctl = getattr(fig, "_vlp_control", {"paused": False, "quit": False}) if fig is not None else {"paused": False, "quit": False}
-                    if ctl["quit"]:
+                if do_show:
+                    while time.time() < target_wall:
+                        key = cv2.waitKey(1) & 0xFF
+                        if key == ord("q"):
+                            print("Quit requested by user.")
+                            return 0
+                        if key == ord(" "):
+                            paused = not paused
+                        if paused:
+                            if pause_start is None:
+                                pause_start = time.time()
+                            key2 = cv2.waitKey(30) & 0xFF
+                            if key2 == ord("q"):
+                                print("Quit requested by user.")
+                                return 0
+                            if key2 == ord(" "):
+                                paused = False
+                                paused_accum_sec += time.time() - pause_start
+                                pause_start = None
+                        else:
+                            if pause_start is not None:
+                                paused_accum_sec += time.time() - pause_start
+                                pause_start = None
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord("q"):
                         print("Quit requested by user.")
                         return 0
-                    if ctl["paused"]:
-                        if pause_started_wall is None:
-                            pause_started_wall = time.time()
-                        plt_mod.pause(0.03)
-                    else:
-                        if pause_started_wall is not None:
-                            paused_accum_sec += time.time() - pause_started_wall
-                            pause_started_wall = None
-                        remaining = target_wall - time.time()
-                        plt_mod.pause(min(0.01, max(0.001, remaining)))
+                    if key == ord(" "):
+                        paused = not paused
 
             if args.max_frames > 0 and frame_count >= args.max_frames:
                 break
     finally:
         if csv_file is not None:
             csv_file.close()
-        if do_display and plt_mod is not None:
+        if writer_video is not None:
+            writer_video.release()
+            print(f"video_saved: {args.save_video}")
+        if do_display and cv2 is not None:
             try:
-                plt_mod.ioff()
-                plt_mod.close("all")
+                cv2.destroyAllWindows()
             except Exception:
                 pass
 
