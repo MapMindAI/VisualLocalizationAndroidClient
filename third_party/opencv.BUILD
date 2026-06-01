@@ -1,5 +1,4 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("@rules_pkg//:mappings.bzl", "pkg_files")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,18 +11,6 @@ cc_library(
     }),
     hdrs = glob(["include/opencv4/opencv2/**/*"]),
     strip_include_prefix = "include/opencv4",
-)
-
-pkg_files(
-    name = "opencv_lib",
-    prefix = "lib/" + select({
-        "@bazel_platforms//:android_arm64": "arm64-v8a",
-        "//conditions:default": "x86_64",
-    }),
-    srcs = select({
-        "@bazel_platforms//:android_arm64": glob(["lib/android/arm64-v8a/libopencv_*.so"]),
-        "//conditions:default": glob(["lib/libopencv_*.so"]),
-    }),
 )
 
 cc_library(
