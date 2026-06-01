@@ -84,8 +84,41 @@
     const trajGeom = new THREE.BufferGeometry();
     const trajLine = new THREE.Line(trajGeom,new THREE.LineBasicMaterial({color:0xff5555}));
     scene.add(trajLine);
-    const posePt = new THREE.Mesh(new THREE.SphereGeometry(0.03,12,12), new THREE.MeshBasicMaterial({color:0x66ff66}));
-    scene.add(posePt);
+    const trajPts = new THREE.Points(
+      trajGeom,
+      new THREE.PointsMaterial({ color:0xff5555, size:0.035, sizeAttenuation:true })
+    );
+    scene.add(trajPts);
+
+    function makePoseAxisTriad(size=0.18, shaftR=0.008, headR=0.018, headLen=0.04){
+      const g = new THREE.Group();
+      const makeAxis = (color, axis) => {
+        const m = new THREE.MeshBasicMaterial({color});
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, size, 10), m);
+        const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headLen, 12), m);
+        if(axis === 'x'){
+          shaft.rotation.z = -Math.PI/2;
+          shaft.position.x = size * 0.5;
+          head.rotation.z = -Math.PI/2;
+          head.position.x = size + headLen * 0.5;
+        } else if(axis === 'y'){
+          shaft.position.y = size * 0.5;
+          head.position.y = size + headLen * 0.5;
+        } else { // z
+          shaft.rotation.x = Math.PI/2;
+          shaft.position.z = size * 0.5;
+          head.rotation.x = Math.PI/2;
+          head.position.z = size + headLen * 0.5;
+        }
+        g.add(shaft); g.add(head);
+      };
+      makeAxis(0xff3333, 'x');
+      makeAxis(0x33ff33, 'y');
+      makeAxis(0x3388ff, 'z');
+      return g;
+    }
+    const poseAxes = makePoseAxisTriad();
+    scene.add(poseAxes);
     const esdfGroup = new THREE.Group(); scene.add(esdfGroup);
     let depthCloudObj = null;
     let latestPose = {x:0,y:0,z:0};
@@ -104,15 +137,19 @@
     }
     loop();
 
-    function setTraj(t){
+    function setTraj(t, pose){
       const arr=new Float32Array(t.length*3);
       for(let i=0;i<t.length;i++){arr[3*i]=t[i][0];arr[3*i+1]=t[i][1];arr[3*i+2]=t[i][2];}
       trajGeom.setAttribute('position',new THREE.BufferAttribute(arr,3));
       trajGeom.computeBoundingSphere();
       if(t.length){
         const p=t[t.length-1];
-        posePt.position.set(p[0],p[1],p[2]);
+        poseAxes.position.set(p[0],p[1],p[2]);
         latestPose = {x:p[0], y:p[1], z:p[2]};
+      }
+      if(pose && Number.isFinite(pose.qx) && Number.isFinite(pose.qy) &&
+         Number.isFinite(pose.qz) && Number.isFinite(pose.qw)) {
+        poseAxes.quaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
       }
       const followEnabled = !!(followCamEl && followCamEl.checked);
       if(followEnabled && !wasFollowEnabled){
@@ -280,12 +317,12 @@
         const d = JSON.parse(ev.data);
         if(d.image_jpeg_b64) img.src='data:image/jpeg;base64,'+d.image_jpeg_b64;
         fpsEl.textContent='fps: '+(d.fps||0).toFixed(2);
-        const p=d.pose||{tx:0,ty:0,tz:0};
+        const p=d.pose||{tx:0,ty:0,tz:0,qx:0,qy:0,qz:0,qw:1};
         poseEl.textContent=`pose: (${p.tx.toFixed(3)}, ${p.ty.toFixed(3)}, ${p.tz.toFixed(3)})`;
         scaleEl.textContent=d.scale_text||'scale: n/a';
         const v=d.voxblox||{};
         voxEl.textContent=`voxblox: ${v.enabled?'on':'off'} frames=${v.integrated_frames||0} tsdf=${v.tsdf_count||0} esdf=${v.esdf_count||0}`;
-        setTraj(d.trajectory||[]);
+        setTraj(d.trajectory||[], p);
         if (Object.prototype.hasOwnProperty.call(d, 'depth_clouds')) {
           setDepthCloudPoints(d.depth_clouds || []);
         } else {
