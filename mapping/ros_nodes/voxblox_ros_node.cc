@@ -25,10 +25,14 @@ DEFINE_string(topic_esdf, "/vlp/esdf_cloud", "ESDF cloud topic.");
 DEFINE_string(topic_depth_cloud, "/vlp/depth_cloud", "Depth cloud topic in world frame.");
 DEFINE_string(frame_id, "map", "Output cloud frame id.");
 DEFINE_double(esdf_publish_hz, 2.0, "ESDF publish frequency.");
+
 DEFINE_double(voxel_size_m, 0.2, "Voxblox voxel size.");
 DEFINE_double(max_depth_m, 12.0, "Max depth for integration.");
-DEFINE_double(min_depth_m, 0.2, "Max depth for integration.");
+DEFINE_double(min_depth_m, 0.2, "Min depth for integration.");
 DEFINE_int32(depth_stride, 8, "Depth sampling stride.");
+DEFINE_bool(filter_over_head_depth, true, "filter depth over the head.");
+DEFINE_double(filter_over_head_depth_threshold, 0.5, "filter depth over the head.");
+
 DEFINE_double(depth_fx, 313.94085693359375, "Depth intrinsics fx.");
 DEFINE_double(depth_fy, 313.94085693359375, "Depth intrinsics fy.");
 DEFINE_double(depth_cx, 269.742431640625, "Depth intrinsics cx.");
@@ -79,16 +83,24 @@ class VoxbloxRosNode final : public rclcpp::Node {
     cv::Mat depth_m;
     if (!DecodeDepth(*depth_msg, &depth_m)) return;
 
-    const auto points = BuildDepthPointsCamera(depth_m);
+    auto points = BuildDepthPointsCamera(depth_m);
     if (!points.empty()) {
-      voxblox_->IntegratePointCloud(points, pose);
       std::vector<Eigen::Vector3f> cloud_w;
       cloud_w.reserve(points.size());
       const Eigen::Matrix3f R = pose.rotationMatrix();
       const Eigen::Vector3f t = pose.translation();
+      size_t new_pts = 0;
       for (const auto& p : points) {
-        cloud_w.push_back(R * p + t);
+        auto p_rot = R * p;
+        cloud_w.push_back(p_rot + t);
+        if (!FLAGS_filter_over_head_depth) continue;
+        if (p_rot.z() > FLAGS_filter_over_head_depth_threshold) continue;
+        points[new_pts++] = p;
       }
+      if (FLAGS_filter_over_head_depth) points.resize(new_pts);
+
+      voxblox_->IntegratePointCloud(points, pose);
+
       pub_depth_cloud_->publish(mapping::ros2::MakeXYZCloudMsg(
           cloud_w, FLAGS_frame_id, rclcpp::Time(depth_msg->header.stamp)));
     }

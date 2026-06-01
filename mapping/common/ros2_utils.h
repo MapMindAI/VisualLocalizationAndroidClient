@@ -29,7 +29,7 @@ sensor_msgs::msg::PointCloud2 MakeXYZCloudMsg(const std::vector<Eigen::Vector3f>
 
 bool FindFieldOffset(const sensor_msgs::msg::PointCloud2& msg, const std::string& name, int* offset);
 
-std::vector<ColoredPoint> DecodePointCloud2(const sensor_msgs::msg::PointCloud2& msg);
+std::vector<ColoredPoint> DecodePointCloud2(const sensor_msgs::msg::PointCloud2& msg,
+                                            const Eigen::Vector3f* origin = nullptr);
 
 }  // namespace mapping::ros2
-
