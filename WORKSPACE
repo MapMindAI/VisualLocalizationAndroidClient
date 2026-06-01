@@ -11,8 +11,3 @@ grpc_deps()
 
 load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
 grpc_extra_deps()
-
-# Android toolchains for --config=android / --config=android64.
-android_sdk_repository(name = "androidsdk")
-load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
-android_ndk_repository(name = "androidndk")

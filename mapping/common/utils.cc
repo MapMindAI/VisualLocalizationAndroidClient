@@ -68,24 +68,6 @@ double QuatAngleDeg(const Sophus::SE3f& a, const Sophus::SE3f& b) {
   return angle_rad * 180.0 / M_PI;
 }
 
-std::string ByteBufferToString(grpc::ByteBuffer* buffer) {
-  std::vector<grpc::Slice> slices;
-  const grpc::Status dump_status = buffer->Dump(&slices);
-  if (!dump_status.ok()) {
-    return {};
-  }
-  size_t total = 0;
-  for (const auto& slice : slices) {
-    total += slice.size();
-  }
-  std::string out;
-  out.reserve(total);
-  for (const auto& slice : slices) {
-    out.append(reinterpret_cast<const char*>(slice.begin()), slice.size());
-  }
-  return out;
-}
-
 std::string Base64Encode(const uint8_t* data, size_t len) {
   static constexpr char kB64[] =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

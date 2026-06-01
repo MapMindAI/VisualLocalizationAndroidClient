@@ -4,6 +4,8 @@
 
 #include <opencv2/core/mat.hpp>
 
+#include <Eigen/Core>
+#include <unordered_map>
 #include <memory>
 #include <vector>
 
@@ -32,9 +34,13 @@ class VoxbloxProcessor {
   };
 
   struct Config {
-    Config(float _voxel_size_m): voxel_size_m(_voxel_size_m) {
+    Config(float _voxel_size_m = 0.2f, float _max_depth_m = 8.0f)
+        : voxel_size_m(_voxel_size_m), max_depth_m(_max_depth_m) {
       truncation_distance_m = voxel_size_m * 2;
       esdf_vis_distance_m = voxel_size_m * 3;
+      max_ray_length_m = max_depth_m;
+      esdf_max_distance_m = max_depth_m;
+      esdf_vis_update_radius_m = 1.2 * max_depth_m;
     }
     float voxel_size_m = 0.1f;
     int voxels_per_side = 16;
@@ -43,18 +49,21 @@ class VoxbloxProcessor {
     float max_ray_length_m = 5.0f;
     float max_depth_m = 2.0f;
     int pixel_step = 4;
+
     float esdf_max_distance_m = 2.0f;
     bool esdf_show_free = false;
     bool esdf_only_occupied = true;
     int esdf_slice_axis = 2;
     float esdf_slice_level_m = 0.0f;
-    int esdf_full_update_every_n = 20;
+    int esdf_full_update_every_n = -1;
+
     float tsdf_surface_band_m = 0.08f;
     float tsdf_min_weight = 1.0f;
     float esdf_vis_distance_m = 1.0f;
     int viz_voxel_step = 1;
-    int max_tsdf_viz_points = 12000;
-    int max_esdf_viz_points = 12000;
+    int max_tsdf_viz_points = -1;
+    int max_esdf_viz_points = -1;
+    float esdf_vis_update_radius_m = 6.0f;
   };
 
   explicit VoxbloxProcessor(const Config& config);
@@ -65,8 +74,9 @@ class VoxbloxProcessor {
 
   bool Integrate(const cv::Mat& depth_m, const Pose& T_w_c, float fx, float fy, float cx,
                  float cy);
+  bool IntegratePointCloud(const std::vector<Eigen::Vector3f>& points_c, const Pose& T_w_c);
   void GetTsdfVisualization(std::vector<VizPoint>* points) const;
-  void GetEsdfVisualization(std::vector<VizPoint>* points) const;
+  void GetEsdfVisualization(std::vector<VizPoint>* points, bool get_full = false) const;
   bool GetEsdfPlaneSlice2D(float plane_height_m, EsdfPlane2D* out, int max_cells) const;
 
   int IntegratedFrameCount() const;

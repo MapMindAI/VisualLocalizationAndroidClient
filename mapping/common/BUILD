@@ -18,7 +18,7 @@ cc_library(
     ],
     deps = [
         ":pose_types",
-        "@com_github_grpc_grpc//:grpc++",
+        "@com_github_glog//:glog",
     ],
 )
 
@@ -46,5 +46,15 @@ cc_library(
         ":frame_protocol",
         ":utils",
         "@opencv//:core",
+    ],
+)
+
+cc_library(
+    name = "ros2_utils",
+    srcs = ["ros2_utils.cc"],
+    hdrs = ["ros2_utils.h"],
+    deps = [
+        "@eigen//:eigen",
+        "@ros_humble//:ros_humble",
     ],
 )

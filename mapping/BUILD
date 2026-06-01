@@ -13,5 +13,6 @@ cc_binary(
         "@opencv//:imgproc",
         "@opencv//:imgcodecs",
         "@com_github_glog//:glog",
+        "@ros_humble//:ros_humble",
     ],
 )

@@ -2,20 +2,40 @@
 
 Make an Android phone act as an RGBD + pose sensor for local mapping and visualization.
 
-This repository contains:
-- Android capture/export code (`app_vlp/`)
-- Native mapping pipeline with Voxblox (`mapping/`)
-- Python tools for gRPC streaming and dataset inspection (`python/`)
+## Overview
 
-## What it does
+**VisualLocalizationAndroidClient** is an Android application that turns a smartphone into a low-cost visual localization module for robotics.
 
-Current C++ mapping pipeline (`//mapping:mono_vio_ws_stream_client`) replays recorded `VLPREC1` sessions and:
-- decodes JPEG + pose per frame
-- reads recorder depth attached in payload
-- integrates depth + pose into Voxblox TSDF/ESDF
-- publishes trajectory + ESDF 3D points + ESDF 2D plane slice to a built-in web viewer
+The idea is simple: instead of using an expensive LiDAR or a dedicated RGBD camera plus an external computing board, we can reuse an Android phone that already has a camera, IMU, CPU/GPU, battery, display, Wi-Fi, and ARCore support.
 
-https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
+With ARCore, the phone can provide visual-inertial odometry (VIO), camera pose estimation, and depth-related information on supported devices. This project uses the phone as a front-end sensor module and sends visual localization data to a robot or remote backend service.
+
+The goal is to make an old phone work like a compact **RGBD + VIO sensor module** for autonomous robots.
+
+## Motivation
+
+I am building an autonomous robot and I need a localization and navigation module.
+
+Common solutions have several limitations:
+
+- Multi-line LiDAR works well, but it is too expensive for low-cost robots.
+- Single-line LiDAR is cheaper, but it mainly provides 2D information.
+- RGBD cameras such as RealSense or Orbbec can provide RGB, depth, and IMU data, but they usually do not directly provide a complete VIO/localization solution.
+- To use those RGBD cameras for robot localization, an extra development board or mini PC is often required to run VIO, SLAM, mapping, or navigation algorithms.
+
+Then I noticed an old Android phone I had used many years ago.
+
+A smartphone already contains many of the components needed by a robot:
+
+- RGB camera
+- IMU
+- On-device computing power
+- Battery
+- Display
+- Wi-Fi
+- ARCore support on many Android devices
+
+This made me realize that an old phone could become a low-cost robotics perception module.
 
 ## Repository layout
 
@@ -28,20 +48,44 @@ https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
 - `python/`: tooling clients and `vlprec_reader.py` dataset inspector.
 - `data/`: local datasets/screenshots (not guaranteed to exist on a fresh clone).
 
-## Build
 
-Prerequisites (host):
-- Bazel (repo is Bazel-based)
-- C++17 toolchain
-- OpenCV dev libs available to Bazel toolchain
+## How to use the APP
+
+Download and install the apk file from https://github.com/MapMindAI/VisualLocalizationAndroidClient/releases/tag/v1
+
+(1) Choose the depth source (None/ArCore/DA2):
+
+![choose depth](assets/choose_depth.jpg)
+
+(2) Start/Stop recoding:
+
+![start stop rec](assets/start_stop_rec.jpg)
+
+## Dataset format
+
+Recorded sessions use `VLPREC1` container with per-frame payloads containing:
+- VLP2 frame header (timestamp, intrinsics, pose)
+- JPEG image body
+- optional depth chunk(s) tagged `DPT1`
+
+Depth is decoded as metric `CV_32F` and integrated without resizing; intrinsics are scaled to depth resolution before integration.
+
+<img width="1243" height="398" alt="VLPREC_Viewer_+_Trajectory" src="https://github.com/user-attachments/assets/0d2b87d7-b0e6-429b-b4a9-98a313deb666" />
+
+
+## Build & Run mapping replay + web viewer
+
+Current C++ mapping pipeline (`//mapping:mono_vio_ws_stream_client`) replays recorded sessions and:
+- decodes JPEG + pose per frame
+- reads recorder depth attached in payload
+- integrates depth + pose into Voxblox TSDF/ESDF
+- publishes trajectory + ESDF 3D points + ESDF 2D plane slice to a built-in web viewer
 
 Build mapping viewer:
 
 ```bash
 bazel build //mapping:mono_vio_ws_stream_client
 ```
-
-## Run mapping replay + web viewer
 
 Run:
 
@@ -60,37 +104,8 @@ Open:
 http://127.0.0.1:9002/index.html
 ```
 
-## Important runtime flags
+https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
 
-Replay:
-- `--data_session=<path>`: input `.rec` file (required)
-- `--loop_session=true|false`: restart at EOF
-- `--replay_realtime=true|false`: honor recorded timestamps
-- `--replay_speed=<float>`: playback speed multiplier
-
-Voxblox/ESDF:
-- `--enable_voxblox=true|false`
-- `--voxblox_voxel_size_m=<meters>`
-- `--esdf_update_every_n=<int>`: update/publish ESDF every N successful integrations
-- `--esdf2d_height_m=<meters>`: world-space Y plane for 2D ESDF slice
-- `--esdf2d_max_cells=<int>`: safety cap for 2D slice grid size
-
-Web:
-- `--enable_websocket=true|false`
-- `--websocket_port=<port>`
-- `--web_send_hz=<float>`
-- `--web_max_traj_points=<int>`
-
-## Dataset format
-
-Recorded sessions use `VLPREC1` container with per-frame payloads containing:
-- VLP2 frame header (timestamp, intrinsics, pose)
-- JPEG image body
-- optional depth chunk(s) tagged `DPT1`
-
-Depth is decoded as metric `CV_32F` and integrated without resizing; intrinsics are scaled to depth resolution before integration.
-
-<img width="1243" height="398" alt="VLPREC_Viewer_+_Trajectory" src="https://github.com/user-attachments/assets/0d2b87d7-b0e6-429b-b4a9-98a313deb666" />
 
 ## Python utilities
 
@@ -101,8 +116,3 @@ python3 python/vlprec_reader.py --input data/files/<session_dir>/vlp_stream.rec 
 ```
 
 Other Python gRPC/web clients are in `python/README.md`.
-
-## Notes
-
-- `mapping/README.md` has mapping-specific usage details.
-- This repo may include local datasets and generated outputs that are machine-specific.
