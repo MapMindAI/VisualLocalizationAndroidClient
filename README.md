@@ -2,12 +2,47 @@
 
 Make an Android phone act as an RGBD + pose sensor for local mapping and visualization.
 
+## Overview
+
+**VisualLocalizationAndroidClient** is an Android application that turns a smartphone into a low-cost visual localization module for robotics.
+
+The idea is simple: instead of using an expensive LiDAR or a dedicated RGBD camera plus an external computing board, we can reuse an Android phone that already has a camera, IMU, CPU/GPU, battery, display, Wi-Fi, and ARCore support.
+
+With ARCore, the phone can provide visual-inertial odometry (VIO), camera pose estimation, and depth-related information on supported devices. This project uses the phone as a front-end sensor module and sends visual localization data to a robot or remote backend service.
+
+The goal is to make an old phone work like a compact **RGBD + VIO sensor module** for autonomous robots.
+
+## Motivation
+
+I am building an autonomous robot and I need a localization and navigation module.
+
+Common solutions have several limitations:
+
+- Multi-line LiDAR works well, but it is too expensive for low-cost robots.
+- Single-line LiDAR is cheaper, but it mainly provides 2D information.
+- RGBD cameras such as RealSense or Orbbec can provide RGB, depth, and IMU data, but they usually do not directly provide a complete VIO/localization solution.
+- To use those RGBD cameras for robot localization, an extra development board or mini PC is often required to run VIO, SLAM, mapping, or navigation algorithms.
+
+Then I noticed an old Android phone I had used many years ago.
+
+A smartphone already contains many of the components needed by a robot:
+
+- RGB camera
+- IMU
+- On-device computing power
+- Battery
+- Display
+- Wi-Fi
+- ARCore support on many Android devices
+
+This made me realize that an old phone could become a low-cost robotics perception module.
+
+## What it does
+
 This repository contains:
 - Android capture/export code (`app_vlp/`)
 - Native mapping pipeline with Voxblox (`mapping/`)
 - Python tools for gRPC streaming and dataset inspection (`python/`)
-
-## What it does
 
 Current C++ mapping pipeline (`//mapping:mono_vio_ws_stream_client`) replays recorded `VLPREC1` sessions and:
 - decodes JPEG + pose per frame

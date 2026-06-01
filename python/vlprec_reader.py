@@ -540,7 +540,7 @@ def main() -> int:
 
             if do_display and cv2 is not None:
                 traj_x.append(rec.tx)
-                traj_z.append(rec.ty)
+                traj_z.append(rec.tz)
                 if playback_start_wall is None:
                     playback_start_wall = time.time()
                     playback_start_rel_ns = rec.rel_ns

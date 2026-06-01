@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/4f305b9f-1916-4a6f-b0e7-45c40ce3d9f1
 Print frame metadata:
 
 ```bash
-python3 python/vlprec_reader.py --input data/extreme_movement/2026-05-29_11-19-06/vlp_stream.rec  --display
+python3 python/vlprec_reader.py --input data/${SESSION}/vlp_stream.rec  --display
 ```
 
 Export frame bodies and metadata CSV:

@@ -127,7 +127,7 @@ def main() -> int:
         depth_show = rot90_ccw(latest_depth_rgb)
         depth_show = ensure_size_nearest(depth_show, rgb.shape[1], rgb.shape[0])
 
-        traj = draw_traj_canvas(traj_x, traj_z, rgb.shape[1], rgb.shape[0])
+        traj = draw_traj_canvas(traj_x, traj_y, rgb.shape[1], rgb.shape[0])
         rgb_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         panel = make_triptych_panel(rgb_bgr, depth_show, traj)
         if latest_pose is not None:
