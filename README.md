@@ -37,21 +37,6 @@ A smartphone already contains many of the components needed by a robot:
 
 This made me realize that an old phone could become a low-cost robotics perception module.
 
-## What it does
-
-This repository contains:
-- Android capture/export code (`app_vlp/`)
-- Native mapping pipeline with Voxblox (`mapping/`)
-- Python tools for gRPC streaming and dataset inspection (`python/`)
-
-Current C++ mapping pipeline (`//mapping:mono_vio_ws_stream_client`) replays recorded `VLPREC1` sessions and:
-- decodes JPEG + pose per frame
-- reads recorder depth attached in payload
-- integrates depth + pose into Voxblox TSDF/ESDF
-- publishes trajectory + ESDF 3D points + ESDF 2D plane slice to a built-in web viewer
-
-https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
-
 ## Repository layout
 
 - `app_vlp/`: Android app and native bridge to publish frame/depth/pose and optionally record datasets.
@@ -63,20 +48,44 @@ https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
 - `python/`: tooling clients and `vlprec_reader.py` dataset inspector.
 - `data/`: local datasets/screenshots (not guaranteed to exist on a fresh clone).
 
-## Build
 
-Prerequisites (host):
-- Bazel (repo is Bazel-based)
-- C++17 toolchain
-- OpenCV dev libs available to Bazel toolchain
+## How to use the APP
+
+Download and install the apk file from https://github.com/MapMindAI/VisualLocalizationAndroidClient/releases/tag/v1
+
+(1) Choose the depth source (None/ArCore/DA2):
+
+![choose depth](assets/choose_depth.jpg)
+
+(2) Start/Stop recoding:
+
+![start stop rec](assets/start_stop_rec.jpg)
+
+## Dataset format
+
+Recorded sessions use `VLPREC1` container with per-frame payloads containing:
+- VLP2 frame header (timestamp, intrinsics, pose)
+- JPEG image body
+- optional depth chunk(s) tagged `DPT1`
+
+Depth is decoded as metric `CV_32F` and integrated without resizing; intrinsics are scaled to depth resolution before integration.
+
+<img width="1243" height="398" alt="VLPREC_Viewer_+_Trajectory" src="https://github.com/user-attachments/assets/0d2b87d7-b0e6-429b-b4a9-98a313deb666" />
+
+
+## Build & Run mapping replay + web viewer
+
+Current C++ mapping pipeline (`//mapping:mono_vio_ws_stream_client`) replays recorded sessions and:
+- decodes JPEG + pose per frame
+- reads recorder depth attached in payload
+- integrates depth + pose into Voxblox TSDF/ESDF
+- publishes trajectory + ESDF 3D points + ESDF 2D plane slice to a built-in web viewer
 
 Build mapping viewer:
 
 ```bash
 bazel build //mapping:mono_vio_ws_stream_client
 ```
-
-## Run mapping replay + web viewer
 
 Run:
 
@@ -95,37 +104,8 @@ Open:
 http://127.0.0.1:9002/index.html
 ```
 
-## Important runtime flags
+https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
 
-Replay:
-- `--data_session=<path>`: input `.rec` file (required)
-- `--loop_session=true|false`: restart at EOF
-- `--replay_realtime=true|false`: honor recorded timestamps
-- `--replay_speed=<float>`: playback speed multiplier
-
-Voxblox/ESDF:
-- `--enable_voxblox=true|false`
-- `--voxblox_voxel_size_m=<meters>`
-- `--esdf_update_every_n=<int>`: update/publish ESDF every N successful integrations
-- `--esdf2d_height_m=<meters>`: world-space Y plane for 2D ESDF slice
-- `--esdf2d_max_cells=<int>`: safety cap for 2D slice grid size
-
-Web:
-- `--enable_websocket=true|false`
-- `--websocket_port=<port>`
-- `--web_send_hz=<float>`
-- `--web_max_traj_points=<int>`
-
-## Dataset format
-
-Recorded sessions use `VLPREC1` container with per-frame payloads containing:
-- VLP2 frame header (timestamp, intrinsics, pose)
-- JPEG image body
-- optional depth chunk(s) tagged `DPT1`
-
-Depth is decoded as metric `CV_32F` and integrated without resizing; intrinsics are scaled to depth resolution before integration.
-
-<img width="1243" height="398" alt="VLPREC_Viewer_+_Trajectory" src="https://github.com/user-attachments/assets/0d2b87d7-b0e6-429b-b4a9-98a313deb666" />
 
 ## Python utilities
 
@@ -136,8 +116,3 @@ python3 python/vlprec_reader.py --input data/files/<session_dir>/vlp_stream.rec 
 ```
 
 Other Python gRPC/web clients are in `python/README.md`.
-
-## Notes
-
-- `mapping/README.md` has mapping-specific usage details.
-- This repo may include local datasets and generated outputs that are machine-specific.
