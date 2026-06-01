@@ -57,6 +57,9 @@ https://github.com/MapMindAI/VisualLocalizationAndroidClient/releases/tag/v1
 
 ![choose depth](assets/choose_depth.jpg)
 
+https://github.com/user-attachments/assets/a09d27c3-eaa6-4b30-9971-52d8b2d8827e
+
+
 (2) 开始/停止录制：
 
 ![start stop rec](assets/start_stop_rec.jpg)

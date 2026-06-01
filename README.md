@@ -59,6 +59,9 @@ Download and install the apk file from https://github.com/MapMindAI/VisualLocali
 
 ![choose depth](assets/choose_depth.jpg)
 
+https://github.com/user-attachments/assets/a09d27c3-eaa6-4b30-9971-52d8b2d8827e
+
+
 (2) Start/Stop recoding:
 
 ![start stop rec](assets/start_stop_rec.jpg)
