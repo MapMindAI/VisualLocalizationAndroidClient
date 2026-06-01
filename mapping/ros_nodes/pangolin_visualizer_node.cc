@@ -65,7 +65,8 @@ class PangolinVisualizerNode final : public rclcpp::Node {
   void RunViewer() {
     pangolin::CreateWindowAndBind("Pangolin Visualizer Node", FLAGS_window_width, FLAGS_window_height);
     glEnable(GL_DEPTH_TEST);
-    pangolin::CreatePanel("menu").SetBounds(0.0, 1.0, 0.0, pangolin::Attach::Pix(220));
+    int panel_pixels = 320;
+    pangolin::CreatePanel("menu").SetBounds(0.66, 1.0, 0.0, pangolin::Attach::Pix(panel_pixels));
     pangolin::Var<bool> ui_show_depth_cloud("menu.Show DepthCloud", true, true);
     pangolin::Var<double> ui_depth_cloud_size("menu.DepthCloud Size", 2.0, 1.0, 10.0, true);
     pangolin::Var<double> ui_esdf_size("menu.ESDF Size", 10.0, 5.0, 20.0, true);
@@ -81,11 +82,12 @@ class PangolinVisualizerNode final : public rclcpp::Node {
         pangolin::ModelViewLookAt(0, -3, -6, 0, 0, 0, pangolin::AxisY));
     pangolin::View& d_3d =
         pangolin::CreateDisplay()
-            .SetBounds(0.32, 1.0, pangolin::Attach::Pix(220), 1.0, -1280.0f / 720.0f)
+            .SetBounds(0.0, 1.0, pangolin::Attach::Pix(panel_pixels * 2), 1.0, -1280.0f / 720.0f)
             .SetHandler(new pangolin::Handler3D(s_cam));
-    pangolin::View& d_rgb =
-        pangolin::Display("rgb").SetBounds(0.0, 0.32, pangolin::Attach::Pix(220), 0.6, -1.0);
-    pangolin::View& d_depth = pangolin::Display("depth").SetBounds(0.0, 0.32, 0.6, 1.0, -1.0);
+    pangolin::View& d_rgb = pangolin::Display("rgb").SetBounds(
+        0.33, 0.66, 0.0, pangolin::Attach::Pix(panel_pixels), -1.0);
+    pangolin::View& d_depth = pangolin::Display("depth").SetBounds(
+        0.0, 0.33, 0.0, pangolin::Attach::Pix(panel_pixels), -1.0);
     pangolin::GlTexture tex_rgb(640, 480, GL_RGB, false, 0, GL_RGB, GL_UNSIGNED_BYTE);
     pangolin::GlTexture tex_depth(640, 480, GL_RGB, false, 0, GL_RGB, GL_UNSIGNED_BYTE);
 

@@ -57,7 +57,9 @@ struct VoxbloxProcessor::Impl {
     tsdf_int_cfg.max_ray_length_m = config.max_ray_length_m;
     tsdf_int_cfg.voxel_carving_enabled = true;
     tsdf_int_cfg.use_const_weight = true;
-    tsdf_int_cfg.allow_clear = true;
+
+    // allow_clear lets points beyond max_ray_length_m clear up to that distance
+    tsdf_int_cfg.allow_clear = false;
     tsdf_integrator = std::make_unique<voxblox::FastTsdfIntegrator>(
         tsdf_int_cfg, tsdf_map->getTsdfLayerPtr());
 
