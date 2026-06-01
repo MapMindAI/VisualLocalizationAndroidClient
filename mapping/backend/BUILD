@@ -11,4 +11,7 @@ cc_library(
         "-lssl",
         "-lcrypto",
     ],
+    deps = [
+        "@com_github_glog//:glog",
+    ],
 )

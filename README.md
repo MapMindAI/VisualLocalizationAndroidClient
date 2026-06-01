@@ -2,6 +2,8 @@
 
 Make an Android phone act as an RGBD + pose sensor for local mapping and visualization.
 
+中文说明文档: [README_zh.md](README_zh.md)
+
 ## Overview
 
 **VisualLocalizationAndroidClient** is an Android application that turns a smartphone into a low-cost visual localization module for robotics.
@@ -56,6 +58,9 @@ Download and install the apk file from https://github.com/MapMindAI/VisualLocali
 (1) Choose the depth source (None/ArCore/DA2):
 
 ![choose depth](assets/choose_depth.jpg)
+
+https://github.com/user-attachments/assets/a09d27c3-eaa6-4b30-9971-52d8b2d8827e
+
 
 (2) Start/Stop recoding:
 
