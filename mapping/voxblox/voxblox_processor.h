@@ -34,10 +34,12 @@ class VoxbloxProcessor {
   };
 
   struct Config {
-    Config(float _voxel_size_m, float _max_depth_m): voxel_size_m(_voxel_size_m), max_depth_m(_max_depth_m) {
+    Config(float _voxel_size_m = 0.2f, float _max_depth_m = 8.0f)
+        : voxel_size_m(_voxel_size_m), max_depth_m(_max_depth_m) {
       truncation_distance_m = voxel_size_m * 2;
       esdf_vis_distance_m = voxel_size_m * 3;
       max_ray_length_m = max_depth_m;
+      esdf_max_distance_m = max_depth_m;
       esdf_vis_update_radius_m = 1.2 * max_depth_m;
     }
     float voxel_size_m = 0.1f;
@@ -47,12 +49,14 @@ class VoxbloxProcessor {
     float max_ray_length_m = 5.0f;
     float max_depth_m = 2.0f;
     int pixel_step = 4;
+
     float esdf_max_distance_m = 2.0f;
     bool esdf_show_free = false;
     bool esdf_only_occupied = true;
     int esdf_slice_axis = 2;
     float esdf_slice_level_m = 0.0f;
-    int esdf_full_update_every_n = 20;
+    int esdf_full_update_every_n = -1;
+
     float tsdf_surface_band_m = 0.08f;
     float tsdf_min_weight = 1.0f;
     float esdf_vis_distance_m = 1.0f;
