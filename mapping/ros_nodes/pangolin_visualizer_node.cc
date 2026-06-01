@@ -71,6 +71,7 @@ class PangolinVisualizerNode final : public rclcpp::Node {
     pangolin::Var<double> ui_esdf_size("menu.ESDF Size", 3.0, 1.0, 10.0, true);
     pangolin::Var<double> ui_traj_width("menu.Traj Width", 2.0, 1.0, 8.0, true);
     pangolin::Var<double> ui_cam_axis("menu.Cam Axis", 0.35, 0.05, 2.0, true);
+    pangolin::Var<bool> ui_follow_camera("menu.Follow Camera", false, true);
     pangolin::Var<bool> ui_esdf_color_height("menu.ESDF Color Height", FLAGS_esdf_color_by_height, true);
     pangolin::Var<double> ui_esdf_hmin("menu.ESDF H min", FLAGS_esdf_height_min_m, -20.0, 20.0, false);
     pangolin::Var<double> ui_esdf_hmax("menu.ESDF H max", FLAGS_esdf_height_max_m, -20.0, 20.0, false);
@@ -79,12 +80,13 @@ class PangolinVisualizerNode final : public rclcpp::Node {
         pangolin::ProjectionMatrix(1280, 720, 700, 700, 640, 360, 0.1, 2000),
         pangolin::ModelViewLookAt(0, -3, -6, 0, 0, 0, pangolin::AxisY));
     pangolin::View& d_3d = pangolin::CreateDisplay()
-                               .SetBounds(0.0, 0.68, pangolin::Attach::Pix(220), 1.0, -1280.0f / 720.0f)
+                               .SetBounds(0.32, 1.0, pangolin::Attach::Pix(220), 1.0,
+                                          -1280.0f / 720.0f)
                                .SetHandler(new pangolin::Handler3D(s_cam));
     pangolin::View& d_rgb =
-        pangolin::Display("rgb").SetBounds(0.68, 1.0, pangolin::Attach::Pix(220), 0.6, -1.0);
+        pangolin::Display("rgb").SetBounds(0.0, 0.32, pangolin::Attach::Pix(220), 0.6, -1.0);
     pangolin::View& d_depth =
-        pangolin::Display("depth").SetBounds(0.68, 1.0, 0.6, 1.0, -1.0);
+        pangolin::Display("depth").SetBounds(0.0, 0.32, 0.6, 1.0, -1.0);
     pangolin::GlTexture tex_rgb(640, 480, GL_RGB, false, 0, GL_RGB, GL_UNSIGNED_BYTE);
     pangolin::GlTexture tex_depth(640, 480, GL_RGB, false, 0, GL_RGB, GL_UNSIGNED_BYTE);
 
@@ -104,6 +106,14 @@ class PangolinVisualizerNode final : public rclcpp::Node {
         traj = traj_;
         t = cam_t_;
         q = cam_q_;
+      }
+
+      if (ui_follow_camera && !traj.empty()) {
+        pangolin::OpenGlMatrix p_mat;
+        Eigen::Map<Eigen::Matrix<double, 4, 4>> p_matrix(p_mat.m);
+        p_matrix = Eigen::Matrix<double, 4, 4>::Identity();
+        p_matrix.block(0, 3, 3, 1) = traj.back().cast<double>();
+        s_cam.Follow(p_mat);
       }
 
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

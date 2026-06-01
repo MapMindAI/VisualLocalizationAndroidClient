@@ -26,7 +26,7 @@ DEFINE_string(topic_depth_cloud, "/vlp/depth_cloud", "Depth cloud topic in world
 DEFINE_string(frame_id, "map", "Output cloud frame id.");
 DEFINE_double(esdf_publish_hz, 2.0, "ESDF publish frequency.");
 DEFINE_double(voxel_size_m, 0.3, "Voxblox voxel size.");
-DEFINE_double(max_depth_m, 6.0, "Max depth for integration.");
+DEFINE_double(max_depth_m, 12.0, "Max depth for integration.");
 DEFINE_int32(depth_stride, 8, "Depth sampling stride.");
 DEFINE_double(depth_fx, 313.94085693359375, "Depth intrinsics fx.");
 DEFINE_double(depth_fy, 313.94085693359375, "Depth intrinsics fy.");
