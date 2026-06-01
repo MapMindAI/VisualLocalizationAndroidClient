@@ -29,6 +29,9 @@ DEFINE_string(topic_esdf, "/vlp/esdf_cloud", "ESDF cloud topic.");
 DEFINE_int32(window_width, 1600, "Viewer width.");
 DEFINE_int32(window_height, 900, "Viewer height.");
 DEFINE_int32(max_traj_points, 5000, "Max trajectory points.");
+DEFINE_bool(esdf_color_by_height, false, "Color ESDF points by height z-axis (Jet).");
+DEFINE_double(esdf_height_min_m, -2.0, "Height min (m) used for ESDF Jet normalization.");
+DEFINE_double(esdf_height_max_m, 2.0, "Height max (m) used for ESDF Jet normalization.");
 
 namespace {
 
@@ -40,6 +43,14 @@ struct ColoredPoint {
   uint8_t g = 255;
   uint8_t b = 255;
 };
+
+Eigen::Vector3f JetRgb(float t) {
+  t = std::max(0.0f, std::min(1.0f, t));
+  const float r = std::max(0.0f, std::min(1.0f, 1.5f - std::fabs(4.0f * t - 3.0f)));
+  const float g = std::max(0.0f, std::min(1.0f, 1.5f - std::fabs(4.0f * t - 2.0f)));
+  const float b = std::max(0.0f, std::min(1.0f, 1.5f - std::fabs(4.0f * t - 1.0f)));
+  return Eigen::Vector3f(r, g, b);
+}
 
 bool FindFieldOffset(const sensor_msgs::msg::PointCloud2& msg, const std::string& name, int* offset) {
   for (const auto& f : msg.fields) {
@@ -102,6 +113,9 @@ class PangolinVisualizerNode final : public rclcpp::Node {
     pangolin::Var<double> ui_esdf_size("menu.ESDF Size", 3.0, 1.0, 10.0, true);
     pangolin::Var<double> ui_traj_width("menu.Traj Width", 2.0, 1.0, 8.0, true);
     pangolin::Var<double> ui_cam_axis("menu.Cam Axis", 0.35, 0.05, 2.0, true);
+    pangolin::Var<bool> ui_esdf_color_height("menu.ESDF Color Height", FLAGS_esdf_color_by_height, true);
+    pangolin::Var<double> ui_esdf_hmin("menu.ESDF H min", FLAGS_esdf_height_min_m, -20.0, 20.0, false);
+    pangolin::Var<double> ui_esdf_hmax("menu.ESDF H max", FLAGS_esdf_height_max_m, -20.0, 20.0, false);
 
     pangolin::OpenGlRenderState s_cam(
         pangolin::ProjectionMatrix(1280, 720, 700, 700, 640, 360, 0.1, 2000),
@@ -138,7 +152,16 @@ class PangolinVisualizerNode final : public rclcpp::Node {
       glPointSize(static_cast<float>(ui_esdf_size.Get()));
       glBegin(GL_POINTS);
       for (const auto& p : esdf) {
-        glColor3ub(p.r, p.g, p.b);
+        if (ui_esdf_color_height) {
+          const float hmin = static_cast<float>(ui_esdf_hmin.Get());
+          const float hmax = static_cast<float>(ui_esdf_hmax.Get());
+          const float denom = std::max(1e-3f, hmax - hmin);
+          const float h01 = (p.z - hmin) / denom;
+          const Eigen::Vector3f c = JetRgb(h01);
+          glColor3f(c.x(), c.y(), c.z());
+        } else {
+          glColor3ub(p.r, p.g, p.b);
+        }
         glVertex3f(p.x, p.y, p.z);
       }
       glEnd();
