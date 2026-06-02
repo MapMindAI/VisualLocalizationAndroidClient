@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7fbff"/>
+      <stop offset="100%" stop-color="#f8faf7"/>
+    </linearGradient>
+    <linearGradient id="leftCard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eef6ff"/>
+    </linearGradient>
+    <linearGradient id="rightCard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eefaf6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#22324a" flood-opacity="0.14"/>
+    </filter>
+    <style>
+      .title { font: 700 52px 'Arial', sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 24px 'Arial', sans-serif; fill: #475569; }
+      .cardTitle { font: 700 34px 'Arial', sans-serif; fill: #0f172a; }
+      .badge { font: 700 20px 'Arial', sans-serif; fill: #0f172a; }
+      .label { font: 700 22px 'Arial', sans-serif; fill: #0f766e; }
+      .body { font: 400 22px 'Arial', sans-serif; fill: #334155; }
+      .small { font: 400 19px 'Arial', sans-serif; fill: #64748b; }
+      .head { font: 700 24px 'Arial', sans-serif; fill: #0f172a; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="860" fill="url(#bg)"/>
+  <text x="68" y="88" class="title">RGBD + VIO Sensor Comparison</text>
+  <text x="68" y="126" class="subtitle">A dedicated robotics camera appliance versus an Android phone running this project’s app.</text>
+
+  <g transform="translate(70,180)" filter="url(#shadow)">
+    <rect x="0" y="0" rx="30" ry="30" width="590" height="596" fill="url(#leftCard)" stroke="#bfd8f6"/>
+    <rect x="34" y="30" rx="16" ry="16" width="204" height="42" fill="#dbeafe"/>
+    <text x="60" y="58" class="badge">Reference device</text>
+    <text x="34" y="114" class="cardTitle">LooperRobotics Insight 9</text>
+    <text x="34" y="152" class="small">Integrated RGBD + VIO sensor package for robotics.</text>
+
+    <g transform="translate(48,192)">
+      <rect x="0" y="0" rx="26" ry="26" width="492" height="154" fill="#0f172a"/>
+      <rect x="30" y="32" rx="12" ry="12" width="120" height="78" fill="#233047"/>
+      <circle cx="94" cy="71" r="24" fill="#38bdf8"/>
+      <circle cx="210" cy="70" r="22" fill="#1d4ed8"/>
+      <circle cx="272" cy="70" r="22" fill="#0ea5e9"/>
+      <rect x="338" y="42" width="104" height="56" rx="12" fill="#334155"/>
+      <text x="34" y="138" class="small">Single-purpose enclosure with sensing, compute and I/O packaged together.</text>
+    </g>
+
+    <text x="46" y="392" class="head">Typical strengths</text>
+    <text x="46" y="436" class="body">• Purpose-built hardware integration</text>
+    <text x="46" y="474" class="body">• Consistent sensor stack and mounting geometry</text>
+    <text x="46" y="512" class="body">• Robotics-oriented deployment path</text>
+    <text x="46" y="550" class="body">• Lower setup friction for dedicated installations</text>
+
+    <text x="46" y="612" class="head">Tradeoff</text>
+    <text x="46" y="650" class="body">Higher hardware cost and less reuse of existing devices.</text>
+  </g>
+
+  <g transform="translate(738,180)" filter="url(#shadow)">
+    <rect x="0" y="0" rx="30" ry="30" width="590" height="596" fill="url(#rightCard)" stroke="#b9e4d5"/>
+    <rect x="34" y="30" rx="16" ry="16" width="178" height="42" fill="#d1fae5"/>
+    <text x="62" y="58" class="badge">This project</text>
+    <text x="34" y="114" class="cardTitle">Android Phone + VLP App</text>
+    <text x="34" y="152" class="small">Repurposes a consumer phone into a compact RGBD + VIO front-end.</text>
+
+    <g transform="translate(48,192)">
+      <rect x="0" y="0" rx="26" ry="26" width="492" height="154" fill="#0b1220"/>
+      <rect x="116" y="14" rx="24" ry="24" width="262" height="126" fill="#101828" stroke="#334155"/>
+      <rect x="132" y="28" rx="18" ry="18" width="230" height="98" fill="#111827"/>
+      <rect x="148" y="42" width="64" height="70" rx="12" fill="#5b87aa"/>
+      <rect x="220" y="42" width="64" height="70" rx="12" fill="#1d4ed8"/>
+      <rect x="292" y="42" width="54" height="70" rx="12" fill="#111827" stroke="#475569"/>
+      <path d="M304 96 L322 66 L336 74 L344 58" stroke="#fb923c" stroke-width="4" fill="none"/>
+      <text x="36" y="138" class="small">Phone camera, IMU, ARCore and app logic combine into a low-cost sensing node.</text>
+    </g>
+
+    <text x="46" y="392" class="head">Typical strengths</text>
+    <text x="46" y="436" class="body">• Reuses commodity hardware you already own</text>
+    <text x="46" y="474" class="body">• Built-in display, battery, Wi-Fi and compute</text>
+    <text x="46" y="512" class="body">• ARCore provides pose and depth on supported phones</text>
+    <text x="46" y="550" class="body">• Native recording and replay path in one device</text>
+
+    <text x="46" y="612" class="head">Tradeoff</text>
+    <text x="46" y="650" class="body">Capability depends on phone model, ARCore support and thermal limits.</text>
+  </g>
+
+  <g transform="translate(150,792)">
+    <text x="0" y="0" class="label">Common ground</text>
+    <text x="178" y="0" class="body">Both aim to provide RGB, depth and 6DoF motion for robot perception; the main difference is appliance hardware versus repurposed smartphone hardware.</text>
+  </g>
+</svg>

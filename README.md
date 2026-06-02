@@ -14,6 +14,8 @@ With ARCore, the phone can provide visual-inertial odometry (VIO), camera pose e
 
 The goal is to make an old phone work like a compact **RGBD + VIO sensor module** for autonomous robots.
 
+![RGBD + VIO app overview](assets/rgbd_vio_app.svg)
+
 ## Motivation
 
 I am building an autonomous robot and I need a localization and navigation module.
@@ -38,6 +40,12 @@ A smartphone already contains many of the components needed by a robot:
 - ARCore support on many Android devices
 
 This made me realize that an old phone could become a low-cost robotics perception module.
+
+## Sensor comparison
+
+The project sits in the same problem space as dedicated RGBD + VIO camera products such as [LooperRobotics Insight 9](https://looper-robotics.com/), but uses a phone as the sensing and compute front end instead of a dedicated appliance.
+
+![Insight 9 vs phone app comparison](assets/sensor_comparison.svg)
 
 ## Repository layout
 
@@ -110,6 +118,12 @@ http://127.0.0.1:9002/index.html
 ```
 
 https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
+
+## Mapping pipeline
+
+The mapping side replays recorded RGBD + pose data, feeds it into Voxblox, and exposes ESDF outputs for visualization and downstream planning.
+
+![Depth to Voxblox ESDF pipeline](assets/voxblox_esdf_pipeline.svg)
 
 
 ## Python utilities
