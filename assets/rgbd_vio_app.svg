@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7fbff"/>
+      <stop offset="100%" stop-color="#eef7f5"/>
+    </linearGradient>
+    <linearGradient id="phoneGlass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1b2230"/>
+      <stop offset="100%" stop-color="#0c1018"/>
+    </linearGradient>
+    <linearGradient id="rgbPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7aa9d6"/>
+      <stop offset="100%" stop-color="#2f4b65"/>
+    </linearGradient>
+    <linearGradient id="depthPanel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2b0a59"/>
+      <stop offset="35%" stop-color="#2348a6"/>
+      <stop offset="65%" stop-color="#21b7bc"/>
+      <stop offset="100%" stop-color="#f3e85d"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#22324a" flood-opacity="0.18"/>
+    </filter>
+    <style>
+      .title { font: 700 58px 'Arial', sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 22px 'Arial', sans-serif; fill: #475569; }
+      .label { font: 700 22px 'Arial', sans-serif; fill: #0f766e; }
+      .body { font: 400 20px 'Arial', sans-serif; fill: #334155; }
+      .small { font: 400 17px 'Arial', sans-serif; fill: #475569; }
+      .chip { font: 700 18px 'Arial', sans-serif; fill: #0f172a; }
+      .screenTitle { font: 700 18px 'Arial', sans-serif; fill: #f8fafc; }
+      .screenText { font: 700 16px 'Arial', sans-serif; fill: #dbeafe; }
+      .screenMetric { font: 700 16px 'Arial', sans-serif; fill: #e5e7eb; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="820" fill="url(#bg)"/>
+  <text x="68" y="92" class="title">Phone App as RGBD + VIO Sensor</text>
+  <text x="68" y="128" class="subtitle">
+    <tspan x="68" dy="0">An Android device captures RGB, depth and 6DoF pose,</tspan>
+    <tspan x="68" dy="28">then records or streams a synchronized session.</tspan>
+  </text>
+
+  <g transform="translate(70,170)">
+    <rect x="0" y="0" rx="18" ry="18" width="186" height="56" fill="#ffffff" stroke="#99d8d0"/>
+    <text x="30" y="36" class="chip">RGB camera</text>
+    <rect x="206" y="0" rx="18" ry="18" width="166" height="56" fill="#ffffff" stroke="#99d8d0"/>
+    <text x="236" y="36" class="chip">Depth</text>
+    <rect x="392" y="0" rx="18" ry="18" width="178" height="56" fill="#ffffff" stroke="#99d8d0"/>
+    <text x="420" y="36" class="chip">ARCore VIO</text>
+    <rect x="590" y="0" rx="18" ry="18" width="178" height="56" fill="#ffffff" stroke="#99d8d0"/>
+    <text x="626" y="36" class="chip">Wi-Fi stream</text>
+    <rect x="788" y="0" rx="18" ry="18" width="178" height="56" fill="#ffffff" stroke="#99d8d0"/>
+    <text x="814" y="36" class="chip">VLPREC record</text>
+  </g>
+
+  <g transform="translate(290,210)" filter="url(#shadow)">
+    <rect x="0" y="0" rx="48" ry="48" width="820" height="470" fill="#0b0f18"/>
+    <rect x="26" y="26" rx="34" ry="34" width="768" height="418" fill="url(#phoneGlass)" stroke="#2b3445"/>
+    <rect x="327" y="12" rx="14" ry="14" width="166" height="20" fill="#1f2937"/>
+    <text x="58" y="70" class="screenTitle">10:42:31</text>
+    <circle cx="176" cy="63" r="7" fill="#22c55e"/>
+    <text x="194" y="70" class="screenTitle">LIVE</text>
+    <text x="355" y="68" class="screenTitle">RGBD + VIO</text>
+    <text x="668" y="70" class="screenTitle">60 FPS</text>
+
+    <rect x="54" y="100" width="224" height="274" rx="14" fill="url(#rgbPanel)"/>
+    <rect x="288" y="100" width="224" height="274" rx="14" fill="url(#depthPanel)"/>
+    <rect x="522" y="100" width="218" height="274" rx="14" fill="#121826" stroke="#364152"/>
+
+    <rect x="70" y="116" width="102" height="34" rx="10" fill="#0f766e" opacity="0.92"/>
+    <text x="88" y="139" class="screenText">RGB view</text>
+    <rect x="304" y="116" width="126" height="34" rx="10" fill="#0f766e" opacity="0.92"/>
+    <text x="322" y="139" class="screenText">Depth map</text>
+    <rect x="538" y="116" width="124" height="34" rx="10" fill="#0f766e" opacity="0.92"/>
+    <text x="554" y="139" class="screenText">VIO pose</text>
+
+    <path d="M76 340 C118 252 150 224 210 202 C236 193 246 186 260 176" stroke="#f8fafc" stroke-width="4" fill="none" opacity="0.55"/>
+    <rect x="96" y="202" width="90" height="62" fill="#dbeafe" opacity="0.25"/>
+    <rect x="196" y="224" width="52" height="112" fill="#bae6fd" opacity="0.28"/>
+    <circle cx="354" cy="292" r="84" fill="#0ea5e9" opacity="0.26"/>
+    <rect x="312" y="250" width="94" height="116" fill="#fde047" opacity="0.33"/>
+    <rect x="474" y="164" width="12" height="172" rx="6" fill="#fde047"/>
+    <text x="460" y="156" class="screenMetric">5.0m</text>
+    <text x="460" y="352" class="screenMetric">0.5m</text>
+    <path d="M598 305 L654 266 L692 284 L704 242" stroke="#fb923c" stroke-width="5" fill="none"/>
+    <path d="M598 305 L632 332 L670 354 L714 326" stroke="#fb923c" stroke-width="5" fill="none"/>
+    <line x1="574" y1="332" x2="574" y2="260" stroke="#22c55e" stroke-width="4"/>
+    <line x1="574" y1="332" x2="618" y2="332" stroke="#ef4444" stroke-width="4"/>
+    <line x1="574" y1="332" x2="546" y2="356" stroke="#38bdf8" stroke-width="4"/>
+
+    <rect x="54" y="388" width="686" height="36" rx="12" fill="#090d14"/>
+    <text x="72" y="412" class="screenMetric">Tracking: GOOD</text>
+    <text x="236" y="412" class="screenMetric">FPS: 30.2</text>
+    <text x="368" y="412" class="screenMetric">IMU: 200 Hz</text>
+    <text x="500" y="412" class="screenMetric">Points: 12.4K</text>
+    <circle cx="760" cy="196" r="28" fill="#1f2937" stroke="#6b7280"/>
+    <circle cx="760" cy="284" r="34" fill="#111827" stroke="#f8fafc" stroke-width="6"/>
+    <circle cx="760" cy="284" r="15" fill="#ef4444"/>
+    <circle cx="760" cy="372" r="28" fill="#1f2937"/>
+  </g>
+
+  <g transform="translate(72,258)">
+    <text x="0" y="0" class="label">App inputs</text>
+    <text x="0" y="42" class="body">RGB frames</text>
+    <text x="0" y="78" class="small">JPEG-compressed color stream</text>
+    <text x="0" y="146" class="body">Depth map</text>
+    <text x="0" y="182" class="small">ARCore / model-based metric depth</text>
+    <text x="0" y="250" class="body">IMU + ARCore pose</text>
+    <text x="0" y="286" class="small">Time-aligned 6DoF trajectory</text>
+  </g>
+
+  <g transform="translate(1134,254)">
+    <text x="0" y="0" class="label">App outputs</text>
+    <text x="0" y="42" class="body">Live ROS / gRPC feed</text>
+    <text x="0" y="74" class="small">color, depth and pose</text>
+    <text x="0" y="98" class="small">to the host robot</text>
+    <text x="0" y="146" class="body">On-device dataset recording</text>
+    <text x="0" y="178" class="small">single-file</text>
+    <text x="0" y="202" class="small">`vlp_stream.rec` capture</text>
+    <text x="0" y="250" class="body">Camera intrinsics</text>
+    <text x="0" y="282" class="small">fx, fy, cx, cy preserved</text>
+    <text x="0" y="306" class="small">for each frame</text>
+  </g>
+
+  <g stroke="#0f766e" stroke-width="3" fill="none" stroke-dasharray="7 7" opacity="0.75">
+    <path d="M206 300 C256 300 258 300 286 308"/>
+    <path d="M186 438 C250 438 254 438 286 438"/>
+    <path d="M236 574 C264 574 270 556 286 534"/>
+  </g>
+  <g stroke="#f97316" stroke-width="3" fill="none" stroke-dasharray="7 7" opacity="0.75">
+    <path d="M1114 318 C1130 310 1138 304 1160 296"/>
+    <path d="M1114 494 C1134 500 1146 516 1164 534"/>
+  </g>
+</svg>

@@ -4,6 +4,8 @@ Make an Android phone act as an RGBD + pose sensor for local mapping and visuali
 
 中文说明文档: [README_zh.md](README_zh.md)
 
+![phone_robot](assets/phone_robot.jpg)
+
 ## Overview
 
 **VisualLocalizationAndroidClient** is an Android application that turns a smartphone into a low-cost visual localization module for robotics.
@@ -13,6 +15,8 @@ The idea is simple: instead of using an expensive LiDAR or a dedicated RGBD came
 With ARCore, the phone can provide visual-inertial odometry (VIO), camera pose estimation, and depth-related information on supported devices. This project uses the phone as a front-end sensor module and sends visual localization data to a robot or remote backend service.
 
 The goal is to make an old phone work like a compact **RGBD + VIO sensor module** for autonomous robots.
+
+![RGBD + VIO app overview](assets/rgbd_vio_app.svg)
 
 ## Motivation
 
@@ -38,6 +42,15 @@ A smartphone already contains many of the components needed by a robot:
 - ARCore support on many Android devices
 
 This made me realize that an old phone could become a low-cost robotics perception module.
+
+## Sensor comparison
+
+The project sits in the same problem space as dedicated RGBD + VIO camera products such as [LooperRobotics Insight 9](https://looper-robotics.com/), but uses a phone as the sensing and compute front end instead of a dedicated appliance.
+
+![Insight 9 vs phone app comparison](assets/sensor_comparison.svg)
+
+![looper arcore](assets/looper_arcore.jpg)
+
 
 ## Repository layout
 
@@ -111,6 +124,12 @@ http://127.0.0.1:9002/index.html
 
 https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
 
+## Mapping pipeline
+
+The mapping side replays recorded RGBD + pose data, feeds it into Voxblox, and exposes ESDF outputs for visualization and downstream planning.
+
+![Depth to Voxblox ESDF pipeline](assets/voxblox_esdf_pipeline.svg)
+
 
 ## Python utilities
 
@@ -121,3 +140,16 @@ python3 python/vlprec_reader.py --input data/files/<session_dir>/vlp_stream.rec 
 ```
 
 Other Python gRPC/web clients are in `python/README.md`.
+
+## WIP: turning it into an autonomous robot
+
+![phone_robot](assets/phone_robot_base.jpg)
+
+This project is evolving from a phone-based RGBD + VIO sensor into a complete autonomous robot stack.
+
+Current work in progress:
+
+- Connect the phone app to [IDF_esp32_robot](https://github.com/MapMindAI/ESP32-Robot-Control) over BLE.
+- Build a local ESDF map from the recorded or streamed RGBD + pose data.
+- Let the robot explore its surroundings autonomously.
+- Use the ESDF map for navigation so the robot can move to user-specified goals.
