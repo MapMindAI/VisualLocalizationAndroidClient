@@ -23,11 +23,11 @@
     </filter>
     <style>
       .title { font: 700 58px 'Arial', sans-serif; fill: #0f172a; }
-      .subtitle { font: 400 24px 'Arial', sans-serif; fill: #475569; }
+      .subtitle { font: 400 22px 'Arial', sans-serif; fill: #475569; }
       .label { font: 700 22px 'Arial', sans-serif; fill: #0f766e; }
-      .body { font: 400 22px 'Arial', sans-serif; fill: #334155; }
-      .small { font: 400 18px 'Arial', sans-serif; fill: #475569; }
-      .chip { font: 700 20px 'Arial', sans-serif; fill: #0f172a; }
+      .body { font: 400 20px 'Arial', sans-serif; fill: #334155; }
+      .small { font: 400 17px 'Arial', sans-serif; fill: #475569; }
+      .chip { font: 700 18px 'Arial', sans-serif; fill: #0f172a; }
       .screenTitle { font: 700 18px 'Arial', sans-serif; fill: #f8fafc; }
       .screenText { font: 700 16px 'Arial', sans-serif; fill: #dbeafe; }
       .screenMetric { font: 700 16px 'Arial', sans-serif; fill: #e5e7eb; }
@@ -36,7 +36,10 @@
 
   <rect width="1400" height="820" fill="url(#bg)"/>
   <text x="68" y="92" class="title">Phone App as RGBD + VIO Sensor</text>
-  <text x="68" y="132" class="subtitle">An Android device captures RGB, depth and 6DoF pose, then records or streams a synchronized session.</text>
+  <text x="68" y="128" class="subtitle">
+    <tspan x="68" dy="0">An Android device captures RGB, depth and 6DoF pose,</tspan>
+    <tspan x="68" dy="28">then records or streams a synchronized session.</tspan>
+  </text>
 
   <g transform="translate(70,170)">
     <rect x="0" y="0" rx="18" ry="18" width="186" height="56" fill="#ffffff" stroke="#99d8d0"/>
@@ -48,7 +51,7 @@
     <rect x="590" y="0" rx="18" ry="18" width="178" height="56" fill="#ffffff" stroke="#99d8d0"/>
     <text x="626" y="36" class="chip">Wi-Fi stream</text>
     <rect x="788" y="0" rx="18" ry="18" width="178" height="56" fill="#ffffff" stroke="#99d8d0"/>
-    <text x="826" y="36" class="chip">VLPREC record</text>
+    <text x="814" y="36" class="chip">VLPREC record</text>
   </g>
 
   <g transform="translate(290,210)" filter="url(#shadow)">
@@ -88,7 +91,7 @@
 
     <rect x="54" y="388" width="686" height="36" rx="12" fill="#090d14"/>
     <text x="72" y="412" class="screenMetric">Tracking: GOOD</text>
-    <text x="236" y="412" class="screenMetric">FPS: 60.2</text>
+    <text x="236" y="412" class="screenMetric">FPS: 30.2</text>
     <text x="368" y="412" class="screenMetric">IMU: 200 Hz</text>
     <text x="500" y="412" class="screenMetric">Points: 12.4K</text>
     <circle cx="760" cy="196" r="28" fill="#1f2937" stroke="#6b7280"/>
@@ -109,12 +112,15 @@
 
   <g transform="translate(1134,254)">
     <text x="0" y="0" class="label">App outputs</text>
-    <text x="0" y="42" class="body">Live ROS / gRPC style feed</text>
-    <text x="0" y="78" class="small">color, depth, pose to host robot</text>
+    <text x="0" y="42" class="body">Live ROS / gRPC feed</text>
+    <text x="0" y="74" class="small">color, depth and pose</text>
+    <text x="0" y="98" class="small">to the host robot</text>
     <text x="0" y="146" class="body">On-device dataset recording</text>
-    <text x="0" y="182" class="small">single-file `vlp_stream.rec` capture</text>
+    <text x="0" y="178" class="small">single-file</text>
+    <text x="0" y="202" class="small">`vlp_stream.rec` capture</text>
     <text x="0" y="250" class="body">Camera intrinsics</text>
-    <text x="0" y="286" class="small">fx, fy, cx, cy preserved per frame</text>
+    <text x="0" y="282" class="small">fx, fy, cx, cy preserved</text>
+    <text x="0" y="306" class="small">for each frame</text>
   </g>
 
   <g stroke="#0f766e" stroke-width="3" fill="none" stroke-dasharray="7 7" opacity="0.75">

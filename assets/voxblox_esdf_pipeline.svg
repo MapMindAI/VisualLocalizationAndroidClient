@@ -17,11 +17,11 @@
     </filter>
     <style>
       .title { font: 700 54px 'Arial', sans-serif; fill: #0f172a; }
-      .subtitle { font: 400 24px 'Arial', sans-serif; fill: #475569; }
+      .subtitle { font: 400 22px 'Arial', sans-serif; fill: #475569; }
       .boxTitle { font: 700 26px 'Arial', sans-serif; fill: #0f172a; }
-      .boxText { font: 400 20px 'Arial', sans-serif; fill: #334155; }
+      .boxText { font: 400 19px 'Arial', sans-serif; fill: #334155; }
       .caption { font: 700 20px 'Arial', sans-serif; fill: #0f766e; }
-      .tiny { font: 400 18px 'Arial', sans-serif; fill: #64748b; }
+      .tiny { font: 400 17px 'Arial', sans-serif; fill: #64748b; }
       .mono { font: 700 18px 'Courier New', monospace; fill: #0f172a; }
     </style>
     <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
@@ -34,7 +34,10 @@
 
   <rect width="1400" height="760" fill="url(#bg)"/>
   <text x="70" y="92" class="title">Depth to Voxblox ESDF Pipeline</text>
-  <text x="70" y="130" class="subtitle">The recorded phone session becomes a replayable RGBD + pose source for TSDF integration, ESDF extraction and visualization.</text>
+  <text x="70" y="126" class="subtitle">
+    <tspan x="70" dy="0">The recorded phone session becomes a replayable RGBD + pose source</tspan>
+    <tspan x="70" dy="28">for TSDF integration, ESDF extraction and visualization.</tspan>
+  </text>
 
   <g transform="translate(60,190)" filter="url(#shadow)">
     <rect x="0" y="0" rx="26" ry="26" width="238" height="168" fill="url(#boxA)" stroke="#b7e4dc"/>
@@ -75,7 +78,8 @@
       <text x="28" y="42" class="boxTitle">Color</text>
       <rect x="28" y="60" width="272" height="126" rx="16" fill="#729fc9"/>
       <path d="M44 174 C92 118 152 122 240 92 C260 84 276 78 294 74" stroke="#f8fafc" stroke-width="4" fill="none" opacity="0.65"/>
-      <text x="28" y="198" class="tiny">JPEG decode for visualization and logging</text>
+      <text x="28" y="196" class="tiny">JPEG decode for visualization</text>
+      <text x="28" y="218" class="tiny">and logging</text>
     </g>
     <g transform="translate(366,30)" filter="url(#shadow)">
       <rect x="0" y="0" rx="22" ry="22" width="328" height="214" fill="#ffffff" stroke="#cbd5e1"/>
@@ -83,7 +87,8 @@
       <rect x="28" y="60" width="272" height="126" rx="16" fill="#1e3a8a"/>
       <circle cx="154" cy="122" r="64" fill="#22d3ee" opacity="0.55"/>
       <rect x="118" y="104" width="92" height="88" fill="#fde047" opacity="0.46"/>
-      <text x="28" y="198" class="tiny">Metric depth used for TSDF / ESDF update</text>
+      <text x="28" y="196" class="tiny">Metric depth used for</text>
+      <text x="28" y="218" class="tiny">TSDF / ESDF update</text>
     </g>
     <g transform="translate(732,30)" filter="url(#shadow)">
       <rect x="0" y="0" rx="22" ry="22" width="328" height="214" fill="#ffffff" stroke="#cbd5e1"/>
@@ -93,7 +98,8 @@
       <line x1="76" y1="158" x2="76" y2="102" stroke="#22c55e" stroke-width="4"/>
       <line x1="76" y1="158" x2="120" y2="158" stroke="#ef4444" stroke-width="4"/>
       <line x1="76" y1="158" x2="56" y2="178" stroke="#38bdf8" stroke-width="4"/>
-      <text x="28" y="198" class="tiny">6DoF camera trajectory in a stable world frame</text>
+      <text x="28" y="196" class="tiny">6DoF camera trajectory</text>
+      <text x="28" y="218" class="tiny">in a stable world frame</text>
     </g>
   </g>
 
@@ -104,7 +110,8 @@
     <text x="26" y="116" class="boxText">ESDF cloud</text>
     <text x="26" y="148" class="boxText">2D ESDF slice</text>
     <text x="26" y="180" class="boxText">Web viewer updates</text>
-    <text x="26" y="216" class="tiny">Useful for local mapping, planning and debugging</text>
+    <text x="26" y="212" class="tiny">Useful for local mapping,</text>
+    <text x="26" y="234" class="tiny">planning and debugging</text>
   </g>
 
   <g stroke="#ea580c" stroke-width="5" fill="none" marker-end="url(#arrowOrange)">

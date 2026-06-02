@@ -17,19 +17,22 @@
     </filter>
     <style>
       .title { font: 700 52px 'Arial', sans-serif; fill: #0f172a; }
-      .subtitle { font: 400 24px 'Arial', sans-serif; fill: #475569; }
-      .cardTitle { font: 700 34px 'Arial', sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 22px 'Arial', sans-serif; fill: #475569; }
+      .cardTitle { font: 700 32px 'Arial', sans-serif; fill: #0f172a; }
       .badge { font: 700 20px 'Arial', sans-serif; fill: #0f172a; }
       .label { font: 700 22px 'Arial', sans-serif; fill: #0f766e; }
-      .body { font: 400 22px 'Arial', sans-serif; fill: #334155; }
-      .small { font: 400 19px 'Arial', sans-serif; fill: #64748b; }
+      .body { font: 400 20px 'Arial', sans-serif; fill: #334155; }
+      .small { font: 400 18px 'Arial', sans-serif; fill: #64748b; }
       .head { font: 700 24px 'Arial', sans-serif; fill: #0f172a; }
     </style>
   </defs>
 
   <rect width="1400" height="860" fill="url(#bg)"/>
   <text x="68" y="88" class="title">RGBD + VIO Sensor Comparison</text>
-  <text x="68" y="126" class="subtitle">A dedicated robotics camera appliance versus an Android phone running this project’s app.</text>
+  <text x="68" y="122" class="subtitle">
+    <tspan x="68" dy="0">A dedicated robotics camera appliance versus</tspan>
+    <tspan x="68" dy="28">an Android phone running this project’s app.</tspan>
+  </text>
 
   <g transform="translate(70,180)" filter="url(#shadow)">
     <rect x="0" y="0" rx="30" ry="30" width="590" height="596" fill="url(#leftCard)" stroke="#bfd8f6"/>
@@ -55,7 +58,8 @@
     <text x="46" y="550" class="body">• Lower setup friction for dedicated installations</text>
 
     <text x="46" y="612" class="head">Tradeoff</text>
-    <text x="46" y="650" class="body">Higher hardware cost and less reuse of existing devices.</text>
+    <text x="46" y="650" class="body">Higher hardware cost and less</text>
+    <text x="46" y="682" class="body">reuse of existing devices.</text>
   </g>
 
   <g transform="translate(738,180)" filter="url(#shadow)">
@@ -83,11 +87,13 @@
     <text x="46" y="550" class="body">• Native recording and replay path in one device</text>
 
     <text x="46" y="612" class="head">Tradeoff</text>
-    <text x="46" y="650" class="body">Capability depends on phone model, ARCore support and thermal limits.</text>
+    <text x="46" y="650" class="body">Capability depends on phone model,</text>
+    <text x="46" y="682" class="body">ARCore support and thermal limits.</text>
   </g>
 
-  <g transform="translate(150,792)">
+  <g transform="translate(128,792)">
     <text x="0" y="0" class="label">Common ground</text>
-    <text x="178" y="0" class="body">Both aim to provide RGB, depth and 6DoF motion for robot perception; the main difference is appliance hardware versus repurposed smartphone hardware.</text>
+    <text x="178" y="-4" class="body">Both provide RGB, depth and 6DoF motion for robot perception.</text>
+    <text x="178" y="26" class="body">The main difference is appliance hardware versus repurposed phone hardware.</text>
   </g>
 </svg>
