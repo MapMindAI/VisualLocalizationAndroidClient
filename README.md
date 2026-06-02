@@ -143,7 +143,7 @@ Other Python gRPC/web clients are in `python/README.md`.
 
 ## WIP: turning it into an autonomous robot
 
-![phone_robot](assets/phone_robot.jpg)
+![phone_robot](assets/phone_robot_base.jpg)
 
 This project is evolving from a phone-based RGBD + VIO sensor into a complete autonomous robot stack.
 
