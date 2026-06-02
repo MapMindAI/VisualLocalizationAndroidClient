@@ -100,7 +100,8 @@ bool FindFieldOffset(const sensor_msgs::msg::PointCloud2& msg, const std::string
   return false;
 }
 
-std::vector<ColoredPoint> DecodePointCloud2(const sensor_msgs::msg::PointCloud2& msg) {
+std::vector<ColoredPoint> DecodePointCloud2(const sensor_msgs::msg::PointCloud2& msg,
+                                            const Eigen::Vector3f* origin) {
   std::vector<ColoredPoint> out;
   if (msg.point_step < 12 || msg.width == 0 || msg.data.empty()) return out;
   int off_x = -1, off_y = -1, off_z = -1, off_rgb = -1;
@@ -117,6 +118,11 @@ std::vector<ColoredPoint> DecodePointCloud2(const sensor_msgs::msg::PointCloud2&
     std::memcpy(&cp.x, p + off_x, sizeof(float));
     std::memcpy(&cp.y, p + off_y, sizeof(float));
     std::memcpy(&cp.z, p + off_z, sizeof(float));
+    if (origin != nullptr) {
+      cp.x -= origin->x();
+      cp.y -= origin->y();
+      cp.z -= origin->z();
+    }
     if (!std::isfinite(cp.x) || !std::isfinite(cp.y) || !std::isfinite(cp.z)) continue;
     if (off_rgb >= 0 && off_rgb + 4 <= static_cast<int>(msg.point_step)) {
       uint32_t rgb_u32 = 0;
@@ -131,4 +137,3 @@ std::vector<ColoredPoint> DecodePointCloud2(const sensor_msgs::msg::PointCloud2&
 }
 
 }  // namespace mapping::ros2
-

@@ -31,7 +31,7 @@ DEFINE_string(topic_depth_cloud, "/vlp/depth_cloud", "Depth cloud topic (world f
 DEFINE_int32(window_width, 1600, "Viewer width.");
 DEFINE_int32(window_height, 900, "Viewer height.");
 DEFINE_int32(max_traj_points, 5000, "Max trajectory points.");
-DEFINE_bool(esdf_color_by_height, false, "Color ESDF points by height z-axis (Jet).");
+DEFINE_bool(esdf_color_by_height, true, "Color ESDF points by height z-axis (Jet).");
 DEFINE_double(esdf_height_min_m, -2.0, "Height min (m) used for ESDF Jet normalization.");
 DEFINE_double(esdf_height_max_m, 2.0, "Height max (m) used for ESDF Jet normalization.");
 
@@ -79,7 +79,7 @@ class PangolinVisualizerNode final : public rclcpp::Node {
 
     pangolin::OpenGlRenderState s_cam(
         pangolin::ProjectionMatrix(1280, 720, 700, 700, 640, 360, 0.1, 2000),
-        pangolin::ModelViewLookAt(0, -3, -6, 0, 0, 0, pangolin::AxisY));
+        pangolin::ModelViewLookAt(0, 1, 2, 0, 0, 0, pangolin::AxisY));
     pangolin::View& d_3d =
         pangolin::CreateDisplay()
             .SetBounds(0.0, 1.0, pangolin::Attach::Pix(panel_pixels * 2), 1.0, -1280.0f / 720.0f)
@@ -105,7 +105,7 @@ class PangolinVisualizerNode final : public rclcpp::Node {
         esdf = latest_esdf_;
         depth_cloud = latest_depth_cloud_;
         traj = traj_;
-        t = cam_t_;
+        t = cam_t_ - origin_t_;
         q = cam_q_;
       }
 
@@ -151,7 +151,8 @@ class PangolinVisualizerNode final : public rclcpp::Node {
         glLineWidth(static_cast<float>(ui_traj_width.Get()));
         glColor3ub(100, 255, 100);
         glBegin(GL_LINE_STRIP);
-        for (const auto& p : traj) glVertex3f(p.x(), p.y(), p.z());
+        for (const auto& p : traj)
+          glVertex3f(p.x() - origin_t_.x(), p.y() - origin_t_.y(), p.z() - origin_t_.z());
         glEnd();
       }
 
@@ -240,21 +241,28 @@ class PangolinVisualizerNode final : public rclcpp::Node {
     cam_t_ = Eigen::Vector3f(static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z));
     cam_q_ = Eigen::Quaternionf(static_cast<float>(q.w), static_cast<float>(q.x), static_cast<float>(q.y),
                                 static_cast<float>(q.z));
+    if (!has_origin_) {
+      origin_t_ = cam_t_;
+      origin_t_.z() = 0.0;
+      has_origin_ = true;
+    }
     traj_.push_back(cam_t_);
     while (static_cast<int>(traj_.size()) > FLAGS_max_traj_points) traj_.pop_front();
   }
 
   void OnEsdf(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     if (!msg) return;
-    auto esdf = mapping::ros2::DecodePointCloud2(*msg);
     std::lock_guard<std::mutex> lk(mu_);
+    const Eigen::Vector3f* origin = has_origin_ ? &origin_t_ : nullptr;
+    auto esdf = mapping::ros2::DecodePointCloud2(*msg, origin);
     latest_esdf_ = std::move(esdf);
   }
 
   void OnDepthCloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     if (!msg) return;
-    auto pts = mapping::ros2::DecodePointCloud2(*msg);
     std::lock_guard<std::mutex> lk(mu_);
+    const Eigen::Vector3f* origin = has_origin_ ? &origin_t_ : nullptr;
+    auto pts = mapping::ros2::DecodePointCloud2(*msg, origin);
     latest_depth_cloud_ = std::move(pts);
   }
 
@@ -272,6 +280,8 @@ class PangolinVisualizerNode final : public rclcpp::Node {
   std::deque<Eigen::Vector3f> traj_;
   Eigen::Vector3f cam_t_ = Eigen::Vector3f::Zero();
   Eigen::Quaternionf cam_q_ = Eigen::Quaternionf::Identity();
+  bool has_origin_ = false;
+  Eigen::Vector3f origin_t_ = Eigen::Vector3f::Zero();
 };
 
 }  // namespace
