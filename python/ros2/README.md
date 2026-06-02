@@ -30,7 +30,7 @@ full topics
 ```
 ros2 bag record -o test_bag \
 /camera/camera/color/image_rect_raw/compressed /camera/camera/depth/image_rect_raw /camera/camera/vio_100hz \
-/camera/camera/color/camera_info /camera/camera/infra1/camera_info /tf_static
+/camera/camera/color/camera_info /camera/camera/infra1/camera_info /camera/camera/vio_status /tf_static
 ```
 
 ## Compare with ARCore data
@@ -103,3 +103,24 @@ Notes:
   - `fy=313.94085693359375`
   - `cx=269.742431640625`
   - `cy=316.34063720703125`
+
+## Convert VLPREC to ROS2 bag
+
+Convert `.rec` back into a ROS2 bag with Looper-compatible topics:
+
+```bash
+python3 python/ros2/vlprec_to_rosbag.py \
+  --input data/${SESSION}/vlp_stream.rec \
+  --output data/${SESSION}/rosbag_from_vlprec \
+  --overwrite
+```
+
+Published topics:
+- `/camera/camera/color/image_rect_raw/compressed` as `sensor_msgs/msg/CompressedImage`
+- `/camera/camera/depth/image_rect_raw` as `sensor_msgs/msg/Image` with `encoding=mono16`
+- `/camera/camera/vio` as `geometry_msgs/msg/PoseStamped`
+- `/camera/camera/color/camera_info` as `sensor_msgs/msg/CameraInfo`
+
+Notes:
+- Color `camera_info` is emitted per frame and uses the VLP record intrinsics (`fx`, `fy`, `cx`, `cy`).
+- Depth is published only when the VLP record contains a valid depth payload.
