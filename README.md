@@ -47,6 +47,9 @@ The project sits in the same problem space as dedicated RGBD + VIO camera produc
 
 ![Insight 9 vs phone app comparison](assets/sensor_comparison.svg)
 
+![looper arcore](assets/looper_arcore.jpg)
+
+
 ## Repository layout
 
 - `app_vlp/`: Android app and native bridge to publish frame/depth/pose and optionally record datasets.
@@ -135,3 +138,16 @@ python3 python/vlprec_reader.py --input data/files/<session_dir>/vlp_stream.rec 
 ```
 
 Other Python gRPC/web clients are in `python/README.md`.
+
+## WIP: turning it into an autonomous robot
+
+![phone_robot](assets/phone_robot.jpg)
+
+This project is evolving from a phone-based RGBD + VIO sensor into a complete autonomous robot stack.
+
+Current work in progress:
+
+- Connect the phone app to [IDF_esp32_robot](https://github.com/MapMindAI/ESP32-Robot-Control) over BLE.
+- Build a local ESDF map from the recorded or streamed RGBD + pose data.
+- Let the robot explore its surroundings autonomously.
+- Use the ESDF map for navigation so the robot can move to user-specified goals.

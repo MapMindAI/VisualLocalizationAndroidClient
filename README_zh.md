@@ -12,6 +12,8 @@
 
 目标是让旧手机变成一个紧凑的 **RGBD + VIO 传感器模块**，用于自主机器人。
 
+![RGBD + VIO app overview](assets/rgbd_vio_app.svg)
+
 ## 背景动机
 
 我在做一台自主机器人，需要定位与导航模块。
@@ -36,6 +38,14 @@
 - 许多 Android 设备支持 ARCore
 
 这让我意识到：旧手机可以成为一个低成本的机器人感知模块。
+
+## 传感器对比
+
+本项目所解决的问题，与 [LooperRobotics Insight 9](https://looper-robotics.com/) 这类专用 RGBD + VIO 相机产品处于同一方向；不同之处在于，本项目使用手机作为感知与计算前端，而不是专用一体化硬件。
+
+![Insight 9 vs phone app comparison](assets/sensor_comparison.svg)
+
+![looper arcore](assets/looper_arcore.jpg)
 
 ## 仓库结构
 
@@ -108,6 +118,12 @@ http://127.0.0.1:9002/index.html
 
 https://github.com/user-attachments/assets/77e57cfb-af64-442e-8c0e-f65b7eb5f4ae
 
+## 建图流程
+
+建图侧会回放录制得到的 RGBD + 位姿数据，将其送入 Voxblox，并输出 ESDF 结果用于可视化以及后续规划。
+
+![Depth to Voxblox ESDF pipeline](assets/voxblox_esdf_pipeline.svg)
+
 ## Python 工具
 
 检查并播放录制数据集：
@@ -117,3 +133,16 @@ python3 python/vlprec_reader.py --input data/files/<session_dir>/vlp_stream.rec 
 ```
 
 其他 Python gRPC/Web 客户端见 `python/README.md`。
+
+## WIP：把它做成一台自主机器人
+
+![phone_robot](assets/phone_robot.jpg)
+
+这个项目正在从“基于手机的 RGBD + VIO 传感器”逐步扩展为一个完整的自主机器人系统。
+
+当前正在推进的工作包括：
+
+- 通过 BLE 将手机 App 连接到 [IDF_esp32_robot](https://github.com/MapMindAI/ESP32-Robot-Control)。
+- 基于录制或实时流式传输的 RGBD + 位姿数据构建本地 ESDF 地图。
+- 让机器人能够自主探索周围环境。
+- 利用 ESDF 地图进行导航，让机器人前往用户指定目标。
