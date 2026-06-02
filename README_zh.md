@@ -2,6 +2,8 @@
 
 让一台 Android 手机充当本地建图与可视化所需的 RGBD + 位姿传感器。
 
+![phone_robot](assets/phone_robot_base.jpg)
+
 ## 项目概述
 
 **VisualLocalizationAndroidClient** 是一个 Android 应用，可将智能手机变成机器人低成本视觉定位模块。
