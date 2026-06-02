@@ -4,7 +4,7 @@ Make an Android phone act as an RGBD + pose sensor for local mapping and visuali
 
 中文说明文档: [README_zh.md](README_zh.md)
 
-![phone_robot](assets/phone_robot_base.jpg)
+![phone_robot](assets/phone_robot.jpg)
 
 ## Overview
 

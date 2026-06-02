@@ -2,7 +2,7 @@
 
 让一台 Android 手机充当本地建图与可视化所需的 RGBD + 位姿传感器。
 
-![phone_robot](assets/phone_robot_base.jpg)
+![phone_robot](assets/phone_robot.jpg)
 
 ## 项目概述
 
@@ -138,7 +138,7 @@ python3 python/vlprec_reader.py --input data/files/<session_dir>/vlp_stream.rec 
 
 ## WIP：把它做成一台自主机器人
 
-![phone_robot](assets/phone_robot.jpg)
+![phone_robot](assets/phone_robot_base.jpg)
 
 这个项目正在从“基于手机的 RGBD + VIO 传感器”逐步扩展为一个完整的自主机器人系统。
 
