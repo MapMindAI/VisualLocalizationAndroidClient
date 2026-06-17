@@ -93,6 +93,7 @@ class HelloArApplication {
   void setRenderEnabled(bool enabled) { render_enabled_ = enabled; }
   void setSceneContentEnabled(bool enabled) { scene_content_enabled_ = enabled; }
   void setDepthSource(int source) { depth_source_.store(source); }
+  void setStreamImageEnabled(bool enabled) { force_stream_image_ = enabled; }
   bool isDa2Ready() const;
 
   int PublishImage();
@@ -169,6 +170,7 @@ class HelloArApplication {
   bool has_latest_stream_frame_ = false;
   bool render_enabled_ = true;
   bool scene_content_enabled_ = true;
+  bool force_stream_image_ = false;
   std::atomic<int> depth_source_{0};  // 0=None, 1=ARCore, 2=DA2
 
   std::unique_ptr<Da2Pipeline> da2_pipeline_;

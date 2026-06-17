@@ -48,6 +48,15 @@
           android:layout_height="wrap_content"
           android:text="Hide BLE"
           android:textAllCaps="false" />
+      <View
+          android:layout_width="8dp"
+          android:layout_height="0dp" />
+      <Button
+          android:id="@+id/webrtc_toggle_button"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:text="Start WebRTC"
+          android:textAllCaps="false" />
   </LinearLayout>
 
   <LinearLayout
@@ -113,6 +122,12 @@
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:layout_below="@id/robot_panel"
+      android:textSize="12sp" />
+  <TextView
+      android:id="@+id/webrtc_status"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_below="@id/msg"
       android:textSize="12sp" />
 
   <LinearLayout

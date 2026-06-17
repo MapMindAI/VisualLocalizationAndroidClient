@@ -113,6 +113,11 @@ JNI_METHOD(void, setDepthSource)
   native(native_application)->setDepthSource(static_cast<int>(depth_source));
 }
 
+JNI_METHOD(void, setStreamImageEnabled)
+(JNIEnv *, jclass, jlong native_application, jboolean enabled) {
+  native(native_application)->setStreamImageEnabled(enabled == JNI_TRUE);
+}
+
 JNI_METHOD(jboolean, isDa2Ready)
 (JNIEnv *, jclass, jlong native_application) {
   return static_cast<jboolean>(

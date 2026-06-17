@@ -81,6 +81,7 @@ public class JniInterface {
   public static native void setRenderEnabled(long nativeApplication, boolean enabled);
   public static native void setSceneContentEnabled(long nativeApplication, boolean enabled);
   public static native void setDepthSource(long nativeApplication, int depthSource);
+  public static native void setStreamImageEnabled(long nativeApplication, boolean enabled);
   public static native boolean isDa2Ready(long nativeApplication);
 
   public static Bitmap loadImage(String imageName) {

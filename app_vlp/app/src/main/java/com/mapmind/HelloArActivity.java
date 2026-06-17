@@ -26,6 +26,9 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -58,14 +61,27 @@ public class HelloArActivity extends AppCompatActivity
   private static final int DEPTH_SOURCE_DA2 = 2;
   private static final int NUM_INSTANT_PLACEMENT_SETTINGS_CHECKBOXES = 1;
   private static final int BLE_PERMISSION_REQUEST_CODE = 1002;
+  // Update these to your Janus gateway settings.
+  private static final String JANUS_BASE_URL = "http://8.134.189.19:8080/janus";
+  private static final int JANUS_ROOM_ID = 1234;
+  private static final String JANUS_ROOM_PIN = "XR2c0MdhhmuxkV9Bi/HPtXevj4V1+WM3";
+  private static final String JANUS_TOKEN = "";
+  private static final String JANUS_API_SECRET = "";
 
   private GLSurfaceView surfaceView;
   private TextView msgView;
+  private TextView webrtcStatusView;
   private TextView robotStatusView;
   private View robotPanelView;
   private Button robotPanelToggleButton;
   private BleServerManager bleServerManager;
   private boolean robotPanelVisible = true;
+  private WebRtcRgbStreamer webRtcStreamer;
+  private boolean webRtcEnabled = false;
+  private HandlerThread webRtcFrameThread;
+  private Handler webRtcFrameHandler;
+  private long lastWebRtcFrameTsNs = -1L;
+  private long lastWebRtcPushWallNs = 0L;
 
   private boolean viewportChanged = false;
   private int viewportWidth;
@@ -115,6 +131,7 @@ public class HelloArActivity extends AppCompatActivity
     setContentView(R.layout.activity_main);
     surfaceView = (GLSurfaceView) findViewById(R.id.surfaceview);
     msgView = findViewById(R.id.msg);
+    webrtcStatusView = findViewById(R.id.webrtc_status);
     robotPanelView = findViewById(R.id.robot_panel);
     robotPanelToggleButton = findViewById(R.id.robot_panel_toggle_button);
     robotStatusView = findViewById(R.id.robot_status);
@@ -163,6 +180,7 @@ public class HelloArActivity extends AppCompatActivity
     instantPlacementSettings.onCreate(this);
     JniInterface.setDepthSource(nativeApplication, selectedDepthSource);
     setupRobotPanel();
+    setupWebRtcPanel();
 
     File externalStorage = new File(getExternalFilesDir(null), "myfile.txt");
     Log.i("Mobili", externalStorage.getAbsolutePath());
@@ -249,6 +267,85 @@ public class HelloArActivity extends AppCompatActivity
           }
         });
     // TODO(yeliu): download tsdf mesh
+  }
+
+  private void setupWebRtcPanel() {
+    final Button webrtcToggleButton = findViewById(R.id.webrtc_toggle_button);
+    webRtcStreamer = new WebRtcRgbStreamer(this);
+    webRtcStreamer.configure(
+        JANUS_BASE_URL, JANUS_ROOM_ID, JANUS_ROOM_PIN, JANUS_TOKEN, JANUS_API_SECRET);
+    webrtcStatusView.setText("WebRTC: idle");
+    webrtcToggleButton.setOnClickListener(
+        v -> {
+          webRtcEnabled = !webRtcEnabled;
+          if (webRtcEnabled) {
+            JniInterface.setStreamImageEnabled(nativeApplication, true);
+            webRtcStreamer.start();
+            webrtcToggleButton.setText("Stop WebRTC");
+            webrtcStatusView.setText("WebRTC: connecting Janus room " + JANUS_ROOM_ID);
+            startWebRtcFramePump();
+          } else {
+            JniInterface.setStreamImageEnabled(nativeApplication, false);
+            stopWebRtcFramePump();
+            webRtcStreamer.stop();
+            webrtcToggleButton.setText("Start WebRTC");
+            webrtcStatusView.setText("WebRTC: stopped");
+          }
+        });
+  }
+
+  private void startWebRtcFramePump() {
+    if (webRtcFrameThread == null) {
+      webRtcFrameThread = new HandlerThread("WebRtcFramePump");
+      webRtcFrameThread.start();
+      webRtcFrameHandler = new Handler(webRtcFrameThread.getLooper());
+    }
+    lastWebRtcFrameTsNs = -1L;
+    lastWebRtcPushWallNs = 0L;
+    webRtcFrameHandler.post(
+        new Runnable() {
+          @Override
+          public void run() {
+            if (!webRtcEnabled || webRtcStreamer == null) {
+              return;
+            }
+            byte[] nv21 = JniInterface.getLatestYuvNv21Image(nativeApplication);
+            long[] info = JniInterface.getLatestStreamDimensionsAndTimestamp(nativeApplication);
+            if (nv21 != null && info != null && info.length >= 3) {
+              int width = (int) info[1];
+              int height = (int) info[2];
+              long tsNs = info[0];
+              final long nowNs = System.nanoTime();
+              final boolean hasImage = nv21.length >= (width * height * 3 / 2);
+              final boolean hasNewFrame = tsNs > 0 && tsNs != lastWebRtcFrameTsNs;
+              final boolean heartbeatDue =
+                  lastWebRtcPushWallNs == 0L || (nowNs - lastWebRtcPushWallNs) > 300_000_000L;
+              if (width > 0
+                  && height > 0
+                  && hasImage
+                  && (hasNewFrame || heartbeatDue)) {
+                long pushTsNs = hasNewFrame ? tsNs : nowNs;
+                webRtcStreamer.pushNv21Frame(nv21, width, height, pushTsNs);
+                if (hasNewFrame) {
+                  lastWebRtcFrameTsNs = tsNs;
+                }
+                lastWebRtcPushWallNs = nowNs;
+                final String status =
+                    hasNewFrame
+                        ? ("WebRTC: streaming " + width + "x" + height)
+                        : ("WebRTC: streaming (hold) " + width + "x" + height);
+                runOnUiThread(() -> webrtcStatusView.setText(status));
+              }
+            }
+            webRtcFrameHandler.postDelayed(this, 80);
+          }
+        });
+  }
+
+  private void stopWebRtcFramePump() {
+    if (webRtcFrameHandler != null) {
+      webRtcFrameHandler.removeCallbacksAndMessages(null);
+    }
   }
 
   private void setupRobotPanel() {
@@ -384,6 +481,7 @@ public class HelloArActivity extends AppCompatActivity
     super.onPause();
     surfaceView.onPause();
     JniInterface.onPause(nativeApplication);
+    stopWebRtcFramePump();
 
     getSystemService(DisplayManager.class).unregisterDisplayListener(this);
   }
@@ -391,6 +489,17 @@ public class HelloArActivity extends AppCompatActivity
   @Override
   public void onDestroy() {
     super.onDestroy();
+    stopWebRtcFramePump();
+    if (webRtcFrameThread != null) {
+      webRtcFrameThread.quitSafely();
+      webRtcFrameThread = null;
+      webRtcFrameHandler = null;
+    }
+    JniInterface.setStreamImageEnabled(nativeApplication, false);
+    if (webRtcStreamer != null) {
+      webRtcStreamer.release();
+      webRtcStreamer = null;
+    }
     if (bleServerManager != null) {
       bleServerManager.shutdown();
     }
